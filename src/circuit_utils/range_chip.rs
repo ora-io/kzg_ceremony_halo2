@@ -150,7 +150,7 @@ pub trait RangeChipOps<W: BaseExt, N: FieldExt> {
     fn assign_w_ceil_leading_limb(&mut self, bn: &BigUint) -> AssignedValue<N>;
     fn assign_n_floor_leading_limb(&mut self, bn: &BigUint) -> AssignedValue<N>;
     fn assign_d_leading_limb(&mut self, bn: &BigUint) -> AssignedValue<N>;
-    fn assign_small_number(&mut self, n: u16, bits: usize) -> AssignedValue<N>;
+    fn assign_small_number(&mut self, n: usize, bits: usize) -> AssignedValue<N>;
 }
 
 fn decompose_bn<N: FieldExt>(bn: &BigUint, n: u64, mask: &BigUint) -> (N, Vec<N>) {
@@ -239,7 +239,7 @@ impl<W: BaseExt, N: FieldExt> RangeChipOps<W, N> for IntegerContext<W, N> {
         res
     }
 
-    fn assign_small_number(&mut self, n: u16, bits: usize) -> AssignedValue<N> {
+    fn assign_small_number(&mut self, n: usize, bits: usize) -> AssignedValue<N> {
         assert!(bits <= 16);
         assert!(n < (1 << bits));
 

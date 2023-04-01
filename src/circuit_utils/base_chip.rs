@@ -2,6 +2,7 @@
   The implementation is ported from https://github.com/DelphinusLab/halo2ecc-s
 */
 
+use halo2_proofs::plonk::Instance;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Fixed},
@@ -21,6 +22,7 @@ pub const FIXED_COLUMNS: usize = VAR_COLUMNS + MUL_COLUMNS + 2;
 
 #[derive(Clone, Debug)]
 pub struct BaseChipConfig {
+    pub primary: Column<Instance>,
     pub base: [Column<Advice>; VAR_COLUMNS],
     pub coeff: [Column<Fixed>; VAR_COLUMNS],
     pub mul_coeff: [Column<Fixed>; MUL_COLUMNS],
@@ -51,6 +53,10 @@ impl<N: FieldExt> BaseChip<N> {
 
         base.iter().for_each(|c| meta.enable_equality(c.clone()));
 
+        // Instance column used for public inputs
+        let primary = meta.instance_column();
+        meta.enable_equality(primary);
+
         meta.create_gate("base_gate", |meta| {
             let _constant = meta.query_fixed(constant, Rotation::cur());
             let _next = meta.query_advice(base[VAR_COLUMNS - 1], Rotation::next());
@@ -73,6 +79,7 @@ impl<N: FieldExt> BaseChip<N> {
         });
 
         BaseChipConfig {
+            primary,
             base,
             coeff,
             mul_coeff,

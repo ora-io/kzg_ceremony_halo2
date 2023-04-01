@@ -1,8 +1,11 @@
-use ark_std::{end_timer, start_timer};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
+
+use ark_std::{end_timer, start_timer};
+use num_bigint::BigUint;
+use rand::rngs::OsRng;
 
 use halo2_proofs::arithmetic::{CurveAffine, Field, FieldExt};
 use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
@@ -12,17 +15,20 @@ use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::{self, ConstraintSystem, Error, SingleVerifier};
 use halo2_proofs::poly::commitment::{Params, ParamsVerifier};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-use rand::rngs::OsRng;
 
+use crate::assign::{AssignedPoint, AssignedValue};
 use crate::circuit_utils::base_chip::{BaseChip, BaseChipConfig};
 use crate::circuit_utils::ecc_chip::{EccChipBaseOps, EccChipScalarOps};
 use crate::circuit_utils::integer_chip::IntegerChipOps;
-use crate::circuit_utils::range_chip::{RangeChip, RangeChipConfig, RangeChipOps};
-use crate::context::{Context, GeneralScalarEccContext};
-use crate::utils::field_to_bn;
+use crate::circuit_utils::range_chip::{
+    RangeChip, RangeChipConfig, RangeChipOps, COMMON_RANGE_BITS, MAX_CHUNKS,
+};
+use crate::context::{Context, GeneralScalarEccContext, Records};
+use crate::utils::{bn_to_field, field_to_bn};
 
 const LENGTH: usize = 16;
 const K: u32 = 22;
+const INSTANCE_NUM: usize = 1 + 8 + 8 * 2 * LENGTH;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -32,7 +38,7 @@ pub struct Config {
 
 #[derive(Clone, Debug)]
 pub struct Circuit<C: CurveAffine, N: FieldExt> {
-    pub from_index: Option<u16>,
+    pub from_index: Option<usize>,
     pub tau: Option<C::ScalarExt>,
     pub points: Vec<Option<C>>,
     _mark: PhantomData<N>,
@@ -69,20 +75,29 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
         config: Self::Config,
         mut layouter: impl Layouter<N>,
     ) -> Result<(), Error> {
-        let base_chip: BaseChip<N> = BaseChip::new(config.base_chip_config);
+        let base_chip = BaseChip::new(config.base_chip_config.clone());
         let range_chip = RangeChip::<N>::new(config.range_chip_config);
         range_chip.init_table(&mut layouter)?;
 
         let ctx = Rc::new(RefCell::new(Context::new()));
         let mut ctx = GeneralScalarEccContext::<C, N>::new(ctx);
+        let mut instances = vec![];
+
+        // load from_index
+        let from_index = ctx
+            .scalar_integer_ctx
+            .assign_small_number(self.from_index.unwrap_or_default(), 16);
+        instances.push(from_index.clone());
 
         // load tau and check pubkey
         let tau = ctx
             .scalar_integer_ctx
             .assign_w(&field_to_bn(&self.tau.unwrap_or_default()));
         let generator = ctx.assign_constant_point(&C::generator());
-        // todo: make pubkey public
+
         let pubkey = ctx.ecc_mul(&generator, tau.clone());
+        instances.extend_from_slice(&pubkey.x.limbs_le);
+        instances.extend_from_slice(&pubkey.y.limbs_le);
 
         // load points
         assert_eq!(self.points.len(), LENGTH);
@@ -91,7 +106,11 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
             .iter()
             .map(|x| {
                 let x = x.unwrap_or(C::identity());
-                ctx.assign_point(&x)
+                let p = ctx.assign_point(&x);
+                instances.extend_from_slice(&p.x.limbs_le);
+                instances.extend_from_slice(&p.y.limbs_le);
+
+                p
             })
             .collect::<Vec<_>>();
 
@@ -99,9 +118,6 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
         let scalars = {
             // cal {tau^((from_index*COUNT)+i)| i=0,1,...,COUNT-1
             let pow_bits_be = {
-                let from_index = ctx
-                    .scalar_integer_ctx
-                    .assign_small_number(self.from_index.unwrap_or_default(), 16);
                 let length = ctx
                     .scalar_integer_ctx
                     .base_chip()
@@ -157,21 +173,46 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
         };
 
         let mut powers_of_tau = vec![];
-        for (p, s) in points.iter().zip(scalars.into_iter()) {
-            powers_of_tau.push(ctx.ecc_mul(p, s));
+        for (point, scalar) in points.iter().zip(scalars.into_iter()) {
+            let p = ctx.ecc_mul(point, scalar);
+
+            instances.extend_from_slice(&p.x.limbs_le);
+            instances.extend_from_slice(&p.y.limbs_le);
+
+            powers_of_tau.push(p);
         }
+        assert_eq!(instances.len(), INSTANCE_NUM);
 
         let ctx = Context::<N>::from(ctx);
-        println!("rows: range {}, base {}", ctx.range_offset, ctx.base_offset);
+        let mut records = Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap();
 
-        let records = Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap();
+        for instance in instances.iter() {
+            records.enable_permute(&instance.cell);
+        }
+
+        let mut assigned_instance_cells = vec![];
         layouter.assign_region(
             || "base",
             |mut region| {
-                records.assign_all(&mut region, &base_chip, &range_chip)?;
+                let cells = records.assign_all(&mut region, &base_chip, &range_chip)?;
+                assigned_instance_cells = instances
+                    .iter()
+                    .map(|ist| {
+                        let cell = cells[ist.cell.region as usize][ist.cell.col][ist.cell.row]
+                            .clone()
+                            .unwrap();
+
+                        cell.cell()
+                    })
+                    .collect::<Vec<_>>();
                 Ok(())
             },
         )?;
+
+        // Constrain public input
+        for (offset, instance) in assigned_instance_cells.into_iter().enumerate() {
+            layouter.constrain_instance(instance, config.base_chip_config.primary, offset)?;
+        }
 
         Ok(())
     }
@@ -186,7 +227,6 @@ pub struct VerifyingKey {
 impl VerifyingKey {
     /// Builds the verifying key.
     pub fn build(params: &Params<bn256::G1Affine>) -> Self {
-        // TODO: use trusted setup.
         let circuit: Circuit<bls12_381::G1Affine, Fr> = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -195,7 +235,6 @@ impl VerifyingKey {
     }
 }
 
-/// The proving key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct ProvingKey {
     pk: plonk::ProvingKey<bn256::G1Affine>,
@@ -204,7 +243,6 @@ pub struct ProvingKey {
 impl ProvingKey {
     /// Builds the proving key.
     pub fn build(params: &Params<bn256::G1Affine>) -> Self {
-        // TODO: use trusted setup.
         let circuit: Circuit<bls12_381::G1Affine, Fr> = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -214,35 +252,101 @@ impl ProvingKey {
     }
 }
 
+fn generate_instance(circuit: &Circuit<bls12_381::G1Affine, Fr>) -> Vec<Fr> {
+    let mut instances = vec![bn_to_field::<Fr>(&BigUint::from(
+        circuit.from_index.unwrap(),
+    ))];
+
+    let bits = COMMON_RANGE_BITS * MAX_CHUNKS;
+    let bit_mask = (BigUint::from(1u64) << bits) - 1u64;
+
+    let split_point = |p: &bls12_381::G1Affine| {
+        let mut limbs = vec![];
+        for el in vec![p.x, p.y].iter() {
+            let bu = field_to_bn(el);
+            let part = (0..4)
+                .map(|i| bn_to_field::<Fr>(&((&bu >> (i * bits)) & &bit_mask)))
+                .collect::<Vec<_>>();
+            limbs.extend_from_slice(&part);
+        }
+
+        limbs
+    };
+
+    let pubkey = bls12_381::G1Affine::generator() * circuit.tau.unwrap();
+    instances.extend_from_slice(&split_point(&pubkey.to_affine()));
+    circuit
+        .points
+        .iter()
+        .map(|p| instances.extend_from_slice(&split_point(&p.unwrap())))
+        .collect::<Vec<_>>();
+
+    let mut tau =
+        circuit
+            .tau
+            .unwrap()
+            .pow(&[(circuit.from_index.unwrap() * LENGTH) as u64, 0, 0, 0]);
+    for p in circuit.points.iter() {
+        let point = p.unwrap() * tau;
+        instances.extend_from_slice(&split_point(&point.to_affine()));
+
+        tau = tau.mul(&circuit.tau.unwrap());
+    }
+    assert_eq!(instances.len(), INSTANCE_NUM);
+
+    instances
+}
+
 pub fn create_proof(
     params: &Params<bn256::G1Affine>,
     circuit: Circuit<bls12_381::G1Affine, Fr>,
     pk: &ProvingKey,
+    instance: &Vec<Fr>,
 ) -> Vec<u8> {
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
     let timer = start_timer!(|| "create proof");
-    plonk::create_proof(&params, &pk.pk, &[circuit], &[&[]], OsRng, &mut transcript)
-        .expect("proof generation should not fail");
+    plonk::create_proof(
+        &params,
+        &pk.pk,
+        &[circuit],
+        &[&[&instance]],
+        OsRng,
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
     end_timer!(timer);
 
-    let proof = transcript.finalize();
-    proof
+    transcript.finalize()
 }
 
-pub fn verify_proof(params: &Params<bn256::G1Affine>, vk: &VerifyingKey, proof: &Vec<u8>) {
-    let params_verifier: ParamsVerifier<Bn256> = params.verifier(0).unwrap();
+pub fn verify_proof(
+    params: &Params<bn256::G1Affine>,
+    vk: &VerifyingKey,
+    proof: &Vec<u8>,
+    instance: &Vec<Fr>,
+) -> Result<(), Error> {
+    let params_verifier: ParamsVerifier<Bn256> = params.verifier(INSTANCE_NUM).unwrap();
 
     let strategy = SingleVerifier::new(&params_verifier);
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
     let timer = start_timer!(|| "verify proof");
-    plonk::verify_proof(&params_verifier, &vk.vk, strategy, &[&[]], &mut transcript).unwrap();
+    let result = plonk::verify_proof(
+        &params_verifier,
+        &vk.vk,
+        strategy,
+        &[&[&instance]],
+        &mut transcript,
+    );
     end_timer!(timer);
+
+    result
 }
 
 #[test]
 fn test_proof() {
+    use halo2_proofs::pairing::group::ff::PrimeField;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -264,8 +368,14 @@ fn test_proof() {
 
     let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
     let pk = ProvingKey::build(&params);
-    let proof = create_proof(&params, circuit, &pk);
+
+    let instance = generate_instance(&circuit);
+    let proof = create_proof(&params, circuit, &pk, &instance);
 
     let vk = VerifyingKey::build(&params);
-    verify_proof(&params, &vk, &proof);
+    verify_proof(&params, &vk, &proof, &instance).is_ok();
+
+    let mut instance = instance;
+    instance[0] = Fr::from_str_vartime("1").unwrap();
+    verify_proof(&params, &vk, &proof, &instance).is_err();
 }
