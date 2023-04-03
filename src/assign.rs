@@ -1,5 +1,5 @@
 /*
-  The implementation is ported from https://github.com/DelphinusLab/halo2ecc-s
+  The implementation is mainly ported from https://github.com/DelphinusLab/halo2ecc-s
 */
 
 use halo2_proofs::arithmetic::{BaseExt, CurveAffine, FieldExt};
@@ -176,25 +176,31 @@ impl<C: CurveAffine, N: FieldExt> AssignedG2Affine<C, N> {
         }
     }
 }
+#[derive(Clone, Debug)]
+pub struct AssignedExtCurvature<C: CurveAffine, N: FieldExt>(
+    pub AssignedFq2<C::Base, N>,
+    pub AssignedCondition<N>,
+);
 
-pub struct AssignedG2<C: CurveAffine, N: FieldExt> {
+#[derive(Clone, Debug)]
+pub struct AssignedG2WithCurvature<C: CurveAffine, N: FieldExt> {
     pub x: AssignedFq2<C::Base, N>,
     pub y: AssignedFq2<C::Base, N>,
-    pub z: AssignedFq2<C::Base, N>,
-    _mark: PhantomData<C>,
+    pub z: AssignedCondition<N>,
+
+    pub curvature: AssignedExtCurvature<C, N>,
 }
 
-impl<C: CurveAffine, N: FieldExt> AssignedG2<C, N> {
+impl<C: CurveAffine, N: FieldExt> AssignedG2WithCurvature<C, N> {
     pub fn new(
         x: AssignedFq2<C::Base, N>,
         y: AssignedFq2<C::Base, N>,
-        z: AssignedFq2<C::Base, N>,
+        z: AssignedCondition<N>,
+        curvature: AssignedExtCurvature<C, N>,
     ) -> Self {
-        Self {
-            x,
-            y,
-            z,
-            _mark: PhantomData,
-        }
+        Self { x, y, z, curvature }
+    }
+    pub fn to_point(self) -> AssignedG2Affine<C, N> {
+        AssignedG2Affine::new(self.x, self.y, self.z)
     }
 }

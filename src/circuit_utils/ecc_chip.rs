@@ -9,8 +9,12 @@ use halo2_proofs::arithmetic::FieldExt;
 use num_bigint::BigUint;
 
 use super::integer_chip::IntegerChipOps;
-use crate::assign::{AssignedCondition, AssignedCurvature, AssignedPoint};
+use crate::assign::{
+    AssignedCondition, AssignedCurvature, AssignedExtCurvature, AssignedG2Affine,
+    AssignedG2WithCurvature, AssignedPoint,
+};
 use crate::assign::{AssignedPointWithCurvature, AssignedValue};
+use crate::circuit_utils::fq2::Fq2ChipOps;
 use crate::utils::{bn_to_field, field_to_bn};
 
 pub trait EccChipScalarOps<C: CurveAffine, N: FieldExt>: EccChipBaseOps<C, N> {
@@ -200,15 +204,90 @@ pub trait EccChipScalarOps<C: CurveAffine, N: FieldExt>: EccChipBaseOps<C, N> {
     fn ecc_mul(&mut self, a: &AssignedPoint<C, N>, s: Self::AssignedScalar) -> AssignedPoint<C, N> {
         self.msm(&vec![a.clone()], &vec![s.clone()])
     }
+
+    fn ecc_g2_mul(
+        &mut self,
+        point: &AssignedG2Affine<C, N>,
+        scalar: &Self::AssignedScalar,
+    ) -> AssignedG2Affine<C, N> {
+        const WINDOW_SIZE: usize = 4;
+
+        // TODO: can be parallel
+        let windows_in_be = self.decompose_scalar::<WINDOW_SIZE>(scalar);
+
+        let identity = self.assign_g2_identity();
+        // {0,P, 2P, 3P,...15P}
+        let point_candidates = {
+            let mut candidates = vec![
+                identity.clone(),
+                self.to_g2_point_with_curvature(point.clone()),
+            ];
+            for i in 2..(1 << WINDOW_SIZE) {
+                let ai = self.ecc_g2_add(&candidates[i - 1], point);
+                let ai = self.to_g2_point_with_curvature(ai);
+                candidates.push(ai)
+            }
+            candidates
+        };
+
+        let pick_candidate = |ops: &mut Self, bits_in_le: &[AssignedCondition<N>; WINDOW_SIZE]| {
+            let mut curr_candidates: Vec<_> = point_candidates.clone();
+            for bit in bits_in_le {
+                let mut next_candidates = vec![];
+
+                for it in curr_candidates.chunks(2) {
+                    let a0 = &it[0];
+                    let a1 = &it[1];
+
+                    let cell = ops.bisec_g2_with_curvature(&bit, a1, a0);
+                    next_candidates.push(cell);
+                }
+                curr_candidates = next_candidates;
+            }
+            assert_eq!(curr_candidates.len(), 1);
+
+            curr_candidates[0].clone()
+        };
+
+        let mut acc = None;
+
+        // for each window
+        for wi in 0..windows_in_be.len() {
+            let mut inner_acc = None;
+
+            // TODO: can be parallel
+            let ci = pick_candidate(self, &windows_in_be[wi]);
+            match inner_acc {
+                None => inner_acc = Some(ci.to_point()),
+                Some(_inner_acc) => {
+                    let p = self.ecc_g2_add(&ci, &_inner_acc);
+                    inner_acc = Some(p);
+                }
+            }
+
+            match acc {
+                None => acc = inner_acc,
+                Some(mut _acc) => {
+                    for _ in 0..WINDOW_SIZE {
+                        let p = self.to_g2_point_with_curvature(_acc);
+                        _acc = self.ecc_g2_double(&p);
+                    }
+                    let p = self.to_g2_point_with_curvature(inner_acc.unwrap());
+                    _acc = self.ecc_g2_add(&p, &_acc);
+                    acc = Some(_acc);
+                }
+            }
+        }
+
+        acc.unwrap()
+    }
 }
 
 pub trait EccBaseIntegerChipWrapper<W: BaseExt, N: FieldExt> {
     fn base_integer_chip(&mut self) -> &mut dyn IntegerChipOps<W, N>;
 }
 
-pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>:
-    EccBaseIntegerChipWrapper<C::Base, N>
-{
+pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
     fn assign_constant_point(&mut self, c: &C) -> AssignedPoint<C, N> {
         let coordinates = c.coordinates();
         let t: Option<_> = coordinates.map(|v| (v.x().clone(), v.y().clone())).into();
@@ -385,39 +464,6 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>:
         p
     }
 
-    fn ecc_assert_equal(&mut self, a: &AssignedPoint<C, N>, b: &AssignedPoint<C, N>) {
-        let eq_x = self.base_integer_chip().is_int_equal(&a.x, &b.x);
-        let eq_y = self.base_integer_chip().is_int_equal(&a.y, &b.y);
-        let eq_z = self.base_integer_chip().base_chip().xnor(&a.z, &b.z);
-        let eq_xy = self.base_integer_chip().base_chip().and(&eq_x, &eq_y);
-        let eq_xyz = self.base_integer_chip().base_chip().and(&eq_xy, &eq_z);
-
-        let is_both_identity = self.base_integer_chip().base_chip().and(&a.z, &b.z);
-        let eq = self
-            .base_integer_chip()
-            .base_chip()
-            .or(&eq_xyz, &is_both_identity);
-
-        self.base_integer_chip().base_chip().assert_true(&eq)
-    }
-
-    fn ecc_neg(&mut self, a: &AssignedPoint<C, N>) -> AssignedPoint<C, N> {
-        let x = a.x.clone();
-        let y = self.base_integer_chip().int_neg(&a.y);
-        let z = a.z.clone();
-
-        AssignedPoint::new(x, y, z)
-    }
-
-    fn ecc_reduce(&mut self, a: &AssignedPoint<C, N>) -> AssignedPoint<C, N> {
-        let x = self.base_integer_chip().reduce(&a.x);
-        let y = self.base_integer_chip().reduce(&a.y);
-        let z = a.z;
-
-        let identity = self.assign_identity();
-        self.bisec_point(&z, &identity.to_point(), &AssignedPoint::new(x, y, z))
-    }
-
     fn to_point_with_curvature(
         &mut self,
         a: AssignedPoint<C, N>,
@@ -433,23 +479,183 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>:
         AssignedPointWithCurvature::new(a.x, a.y, a.z, AssignedCurvature(v, z))
     }
 
-    fn ecc_encode(&mut self, p: &AssignedPoint<C, N>) -> Vec<AssignedValue<N>> {
-        let p = self.ecc_reduce(&p);
-        let shift = bn_to_field(
-            &(BigUint::from(1u64) << self.base_integer_chip().range_chip().info().limb_bits),
-        );
-        let s0 = self.base_integer_chip().base_chip().sum_with_constant(
-            vec![(&p.x.limbs_le[0], N::one()), (&p.x.limbs_le[1], shift)],
-            None,
-        );
-        let s1 = self.base_integer_chip().base_chip().sum_with_constant(
-            vec![(&p.x.limbs_le[2], N::one()), (&p.y.limbs_le[0], shift)],
-            None,
-        );
-        let s2 = self.base_integer_chip().base_chip().sum_with_constant(
-            vec![(&p.y.limbs_le[1], N::one()), (&p.y.limbs_le[2], shift)],
-            None,
-        );
-        vec![s0, s1, s2]
+    // c: ((x.c0, x.c1),(y.c0, y.c1))
+    fn assign_non_identity_constant_g2(
+        &mut self,
+        c: &((C::Base, C::Base), (C::Base, C::Base)),
+    ) -> AssignedG2Affine<C, N> {
+        let x = self.fq2_assign_constant(c.0);
+        let y = self.fq2_assign_constant(c.1);
+
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .assign_constant(N::zero());
+
+        AssignedG2Affine::new(x, y, AssignedCondition(z))
+    }
+
+    fn assign_non_identity_g2(
+        &mut self,
+        c: &((C::Base, C::Base), (C::Base, C::Base)),
+        b: (C::Base, C::Base),
+    ) -> AssignedG2Affine<C, N> {
+        let x = self.fq2_assign(c.0);
+        let y = self.fq2_assign(c.1);
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .assign_constant(N::zero());
+
+        // Constrain y^2 = x^3 + b
+        let b = self.fq2_assign_constant(b);
+        let y2 = self.fq2_mul(&y, &y);
+        let x2 = self.fq2_mul(&x, &x);
+        let x3 = self.fq2_mul(&x2, &x);
+        let right = self.fq2_add(&x3, &b);
+
+        self.fq2_assert_equal(&y2, &right);
+
+        AssignedG2Affine::new(x, y, AssignedCondition(z))
+    }
+
+    fn assign_g2_identity(&mut self) -> AssignedG2WithCurvature<C, N> {
+        let zero = self.fq2_assign_zero();
+        let one = self.fq2_assign_one();
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .assign_constant(N::one());
+
+        AssignedG2WithCurvature::new(
+            zero.clone(),
+            one,
+            AssignedCondition(z),
+            AssignedExtCurvature(zero, AssignedCondition(z)),
+        )
+    }
+
+    fn bisec_g2_point(
+        &mut self,
+        cond: &AssignedCondition<N>,
+        a: &AssignedG2Affine<C, N>,
+        b: &AssignedG2Affine<C, N>,
+    ) -> AssignedG2Affine<C, N> {
+        let x = self.fq2_bisec(cond, &a.x, &b.x);
+        let y = self.fq2_bisec(cond, &a.y, &b.y);
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .bisec_cond(cond, &a.z, &b.z);
+
+        AssignedG2Affine::new(x, y, z)
+    }
+
+    fn bisec_ext_curvature(
+        &mut self,
+        cond: &AssignedCondition<N>,
+        a: &AssignedExtCurvature<C, N>,
+        b: &AssignedExtCurvature<C, N>,
+    ) -> AssignedExtCurvature<C, N> {
+        let v = self.fq2_bisec(cond, &a.0, &b.0);
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .bisec_cond(cond, &a.1, &b.1);
+
+        AssignedExtCurvature(v, z)
+    }
+
+    fn bisec_g2_with_curvature(
+        &mut self,
+        cond: &AssignedCondition<N>,
+        a: &AssignedG2WithCurvature<C, N>,
+        b: &AssignedG2WithCurvature<C, N>,
+    ) -> AssignedG2WithCurvature<C, N> {
+        let x = self.fq2_bisec(cond, &a.x, &b.x);
+        let y = self.fq2_bisec(cond, &a.y, &b.y);
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .bisec_cond(cond, &a.z, &b.z);
+
+        let c = self.bisec_ext_curvature(cond, &a.curvature, &b.curvature);
+
+        AssignedG2WithCurvature::new(x, y, z, c)
+    }
+
+    fn lambda_to_g2_point(
+        &mut self,
+        lambda: &AssignedExtCurvature<C, N>,
+        a: &AssignedG2Affine<C, N>,
+        b: &AssignedG2Affine<C, N>,
+    ) -> AssignedG2Affine<C, N> {
+        let l = &lambda.0;
+
+        // cx = lambda ^ 2 - a.x - b.x
+        let cx = {
+            let l_square = self.fq2_square(l);
+            let t = self.fq2_sub(&l_square, &a.x);
+            let t = self.fq2_sub(&t, &b.x);
+            t
+        };
+
+        let cy = {
+            let t = self.fq2_sub(&a.x, &cx);
+            let t = self.fq2_mul(&t, l);
+            let t = self.fq2_sub(&t, &a.y);
+            t
+        };
+
+        AssignedG2Affine::new(cx, cy, lambda.1)
+    }
+
+    fn ecc_g2_add(
+        &mut self,
+        a: &AssignedG2WithCurvature<C, N>,
+        b: &AssignedG2Affine<C, N>,
+    ) -> AssignedG2Affine<C, N> {
+        let diff_x = self.fq2_sub(&a.x, &b.x);
+        let diff_y = self.fq2_sub(&a.y, &b.y);
+        let (x_eq, tangent) = self.fq2_div(&diff_y, &diff_x);
+
+        let y_eq = self.fq2_is_zero(&diff_y);
+        let eq = self.base_integer_chip().base_chip().and(&x_eq, &y_eq);
+
+        let tangent = AssignedExtCurvature(tangent, x_eq);
+        let mut lambda = self.bisec_ext_curvature(&eq, &a.curvature, &tangent);
+
+        let a_p = a.clone().to_point();
+
+        let p = self.lambda_to_g2_point(&mut lambda, &a_p, b);
+        let p = self.bisec_g2_point(&a.z, b, &p);
+        let p = self.bisec_g2_point(&b.z, &a_p, &p);
+
+        p
+    }
+
+    fn ecc_g2_double(&mut self, a: &AssignedG2WithCurvature<C, N>) -> AssignedG2Affine<C, N> {
+        let a_p = a.clone().to_point();
+        let mut p = self.lambda_to_g2_point(&a.curvature, &a_p, &a_p);
+        p.z = self
+            .base_integer_chip()
+            .base_chip()
+            .bisec_cond(&a.z, &a.z, &p.z);
+
+        p
+    }
+
+    fn to_g2_point_with_curvature(
+        &mut self,
+        a: AssignedG2Affine<C, N>,
+    ) -> AssignedG2WithCurvature<C, N> {
+        // 3 * x ^ 2 / 2 * y
+        let x_square = self.fq2_square(&a.x);
+        let numerator = self.fq2_mul_small_constant(&x_square, 3);
+        let denominator = self.fq2_mul_small_constant(&a.y, 2);
+
+        let (z, v) = self.fq2_div(&numerator, &denominator);
+
+        AssignedG2WithCurvature::new(a.x, a.y, a.z, AssignedExtCurvature(v, z))
     }
 }

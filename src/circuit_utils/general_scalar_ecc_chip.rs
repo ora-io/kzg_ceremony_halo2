@@ -8,6 +8,7 @@ use super::integer_chip::IntegerChipOps;
 use crate::assign::AssignedCondition;
 use crate::assign::AssignedInteger;
 use crate::circuit_utils::ecc_chip::EccChipBaseOps;
+use crate::circuit_utils::fq2::Fq2ChipOps;
 use crate::context::GeneralScalarEccContext;
 use crate::pair;
 use crate::utils::field_to_bn;
@@ -21,6 +22,7 @@ impl<C: CurveAffine, N: FieldExt> EccBaseIntegerChipWrapper<C::Base, N>
 }
 
 impl<C: CurveAffine, N: FieldExt> EccChipBaseOps<C, N> for GeneralScalarEccContext<C, N> {}
+impl<C: CurveAffine, N: FieldExt> Fq2ChipOps<C::Base, N> for GeneralScalarEccContext<C, N> {}
 
 impl<C: CurveAffine, N: FieldExt> EccChipScalarOps<C, N> for GeneralScalarEccContext<C, N> {
     type AssignedScalar = AssignedInteger<C::Scalar, N>;
