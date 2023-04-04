@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 
 use super::integer_chip::IntegerChipOps;
 use crate::assign::{
-    AssignedCondition, AssignedCurvature, AssignedExtCurvature, AssignedG2Affine,
+    AssignedCondition, AssignedCurvature, AssignedExtCurvature, AssignedFq2, AssignedG2Affine,
     AssignedG2WithCurvature, AssignedPoint,
 };
 use crate::assign::{AssignedPointWithCurvature, AssignedValue};
@@ -498,7 +498,7 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
     fn assign_non_identity_g2(
         &mut self,
         c: &((C::Base, C::Base), (C::Base, C::Base)),
-        b: (C::Base, C::Base),
+        b: AssignedFq2<C::Base, N>,
     ) -> AssignedG2Affine<C, N> {
         let x = self.fq2_assign(c.0);
         let y = self.fq2_assign(c.1);
@@ -508,7 +508,6 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
             .assign_constant(N::zero());
 
         // Constrain y^2 = x^3 + b
-        let b = self.fq2_assign_constant(b);
         let y2 = self.fq2_mul(&y, &y);
         let x2 = self.fq2_mul(&x, &x);
         let x3 = self.fq2_mul(&x2, &x);
