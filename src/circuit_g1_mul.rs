@@ -16,18 +16,18 @@ use halo2_proofs::plonk::{self, ConstraintSystem, Error, SingleVerifier};
 use halo2_proofs::poly::commitment::{Params, ParamsVerifier};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 
-use crate::assign::{AssignedPoint, AssignedValue};
 use crate::circuit_utils::base_chip::{BaseChip, BaseChipConfig};
 use crate::circuit_utils::ecc_chip::{EccChipBaseOps, EccChipScalarOps};
 use crate::circuit_utils::integer_chip::IntegerChipOps;
 use crate::circuit_utils::range_chip::{
     RangeChip, RangeChipConfig, RangeChipOps, COMMON_RANGE_BITS, MAX_CHUNKS,
 };
-use crate::context::{Context, GeneralScalarEccContext, Records};
+use crate::context::{Context, GeneralScalarEccContext};
 use crate::utils::{bn_to_field, field_to_bn};
 
-const LENGTH: usize = 16;
-const K: u32 = 22;
+pub const LENGTH: usize = 32;
+#[allow(dead_code)]
+const K: u32 = 23;
 const INSTANCE_NUM: usize = 1 + 8 + 8 * 2 * LENGTH;
 
 #[derive(Clone, Debug)]
@@ -41,7 +41,7 @@ pub struct Circuit<C: CurveAffine, N: FieldExt> {
     pub from_index: Option<usize>,
     pub tau: Option<C::ScalarExt>,
     pub points: Vec<Option<C>>,
-    _mark: PhantomData<N>,
+    pub _mark: PhantomData<N>,
 }
 
 impl<C: CurveAffine, N: FieldExt> Default for Circuit<C, N> {
@@ -252,10 +252,16 @@ impl ProvingKey {
     }
 }
 
-fn generate_instance(circuit: &Circuit<bls12_381::G1Affine, Fr>) -> Vec<Fr> {
-    let mut instances = vec![bn_to_field::<Fr>(&BigUint::from(
-        circuit.from_index.unwrap(),
-    ))];
+#[derive(Clone, Debug)]
+pub struct Instance {
+    pub(crate) from_index: usize,
+    pub(crate) pubkey: bls12_381::G1Affine,
+    pub(crate) old_points: Vec<bls12_381::G1Affine>,
+    pub(crate) new_points: Vec<bls12_381::G1Affine>,
+}
+
+pub(crate) fn generate_instance(instance: &Instance) -> Vec<Fr> {
+    let mut halo2_instances = vec![bn_to_field::<Fr>(&BigUint::from(instance.from_index))];
 
     let bits = COMMON_RANGE_BITS * MAX_CHUNKS;
     let bit_mask = (BigUint::from(1u64) << bits) - 1u64;
@@ -273,31 +279,20 @@ fn generate_instance(circuit: &Circuit<bls12_381::G1Affine, Fr>) -> Vec<Fr> {
         limbs
     };
 
-    let pubkey = bls12_381::G1Affine::generator() * circuit.tau.unwrap();
-    instances.extend_from_slice(&split_point(&pubkey.to_affine()));
-    circuit
-        .points
+    halo2_instances.extend_from_slice(&split_point(&instance.pubkey));
+    let _ = instance
+        .old_points
         .iter()
-        .map(|p| instances.extend_from_slice(&split_point(&p.unwrap())))
+        .chain(instance.new_points.iter())
+        .map(|p| halo2_instances.extend_from_slice(&split_point(&p)))
         .collect::<Vec<_>>();
 
-    let mut tau =
-        circuit
-            .tau
-            .unwrap()
-            .pow(&[(circuit.from_index.unwrap() * LENGTH) as u64, 0, 0, 0]);
-    for p in circuit.points.iter() {
-        let point = p.unwrap() * tau;
-        instances.extend_from_slice(&split_point(&point.to_affine()));
+    assert_eq!(halo2_instances.len(), INSTANCE_NUM);
 
-        tau = tau.mul(&circuit.tau.unwrap());
-    }
-    assert_eq!(instances.len(), INSTANCE_NUM);
-
-    instances
+    halo2_instances
 }
 
-pub fn create_proof(
+pub fn create_proofs(
     params: &Params<bn256::G1Affine>,
     circuit: Circuit<bls12_381::G1Affine, Fr>,
     pk: &ProvingKey,
@@ -350,32 +345,58 @@ fn test_proof() {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
-    let tau = bls12_381::Fr::random(&mut rng);
-
-    let circuit = Circuit::<bls12_381::G1Affine, Fr> {
-        from_index: Some(0),
-        tau: Some(tau),
-        points: (0..LENGTH)
-            .map(|_| {
-                let s = bls12_381::Fr::random(&mut rng);
-                let p = bls12_381::G1Affine::generator() * s;
-                Some(p.to_affine())
-            })
-            .collect::<Vec<_>>(),
-        _mark: Default::default(),
-    };
-
     let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
     let pk = ProvingKey::build(&params);
 
-    let instance = generate_instance(&circuit);
-    let proof = create_proof(&params, circuit, &pk, &instance);
+    let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
+    let tau = bls12_381::Fr::random(&mut rng);
+    let from_index = 0;
+    let old_points = (0..LENGTH)
+        .map(|_| {
+            let s = bls12_381::Fr::random(&mut rng);
+            let p = bls12_381::G1Affine::generator() * s;
+
+            p.to_affine()
+        })
+        .collect::<Vec<_>>();
+    let mut pow = tau.pow_vartime(&[(from_index * LENGTH) as u64, 0, 0, 0]);
+    let mut new_points = vec![];
+    for p in old_points.iter() {
+        let new_p = p * pow;
+        new_points.push(new_p.to_affine());
+        pow = pow * tau;
+    }
+
+    let circuit = Circuit::<bls12_381::G1Affine, Fr> {
+        from_index: Some(from_index),
+        tau: Some(tau),
+        points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
+        _mark: Default::default(),
+    };
+
+    let instance = generate_instance(&Instance {
+        from_index,
+        pubkey: (bls12_381::G1Affine::generator() * tau).to_affine(),
+        old_points,
+        new_points,
+    });
+
+    let proof = create_proofs(&params, circuit, &pk, &instance);
+    println!("proof length {}", proof.len());
 
     let vk = VerifyingKey::build(&params);
-    verify_proof(&params, &vk, &proof, &instance).is_ok();
+    verify_proof(&params, &vk, &proof, &instance);
 
     let mut instance = instance;
     instance[0] = Fr::from_str_vartime("1").unwrap();
-    verify_proof(&params, &vk, &proof, &instance).is_err();
+    verify_proof(&params, &vk, &proof, &instance);
+}
+
+#[test]
+fn test_write_params() {
+    let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
+
+    let mut params_buffer = vec![];
+    params.write(&mut params_buffer).unwrap();
+    std::fs::write("g1_params.bin", &params_buffer).expect("Write params failed");
 }

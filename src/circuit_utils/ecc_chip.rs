@@ -2,20 +2,15 @@
   The implementation is ported from https://github.com/DelphinusLab/halo2ecc-s
 */
 
-use halo2_proofs::arithmetic::BaseExt;
-use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::arithmetic::Field;
-use halo2_proofs::arithmetic::FieldExt;
-use num_bigint::BigUint;
+use halo2_proofs::arithmetic::{BaseExt, CurveAffine, Field, FieldExt};
 
 use super::integer_chip::IntegerChipOps;
 use crate::assign::{
     AssignedCondition, AssignedCurvature, AssignedExtCurvature, AssignedFq2, AssignedG2Affine,
-    AssignedG2WithCurvature, AssignedPoint,
+    AssignedG2WithCurvature, AssignedPoint, AssignedPointWithCurvature,
 };
-use crate::assign::{AssignedPointWithCurvature, AssignedValue};
 use crate::circuit_utils::fq2::Fq2ChipOps;
-use crate::utils::{bn_to_field, field_to_bn};
+use crate::utils::field_to_bn;
 
 pub trait EccChipScalarOps<C: CurveAffine, N: FieldExt>: EccChipBaseOps<C, N> {
     type AssignedScalar: Clone;
