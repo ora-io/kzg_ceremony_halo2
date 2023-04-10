@@ -116,15 +116,9 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
 
         // process scalars
         let scalars = {
-            // cal {tau^((from_index*COUNT)+i)| i=0,1,...,COUNT-1
+            // cal {tau^(from_index+i)| i=0,1,...,LENGTH-1
             let pow_bits_be = {
-                let length = ctx
-                    .scalar_integer_ctx
-                    .base_chip()
-                    .assign_constant(N::from(LENGTH as u64));
-
-                let pow = ctx.scalar_integer_ctx.base_chip().mul(&from_index, &length);
-                let pow_bn = field_to_bn(&pow.val);
+                let pow_bn = field_to_bn(&from_index.val);
 
                 let mut bits_le = (0..16)
                     .map(|i| {
@@ -144,7 +138,9 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
                         .scalar_integer_ctx
                         .base_chip()
                         .sum_with_constant(schema, None);
-                    ctx.scalar_integer_ctx.base_chip().assert_equal(&pow, &sum);
+                    ctx.scalar_integer_ctx
+                        .base_chip()
+                        .assert_equal(&from_index, &sum);
                 }
 
                 bits_le.reverse();
@@ -359,12 +355,12 @@ fn test_proof() {
             p.to_affine()
         })
         .collect::<Vec<_>>();
-    let mut pow = tau.pow_vartime(&[(from_index * LENGTH) as u64, 0, 0, 0]);
+    let mut scalar = tau.pow_vartime(&[from_index as u64, 0, 0, 0]);
     let mut new_points = vec![];
     for p in old_points.iter() {
-        let new_p = p * pow;
+        let new_p = p * scalar;
         new_points.push(new_p.to_affine());
-        pow = pow * tau;
+        scalar = scalar * tau;
     }
 
     let circuit = Circuit::<bls12_381::G1Affine, Fr> {

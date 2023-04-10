@@ -122,15 +122,9 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
 
         // process scalars
         let scalars = {
-            // cal {tau^((from_index*COUNT)+i)| i=0,1,...,COUNT-1
+            // cal {tau^(from_index+i)| i=0,1,...,LENGTH-1
             let pow_bits_be = {
-                let length = ctx
-                    .scalar_integer_ctx
-                    .base_chip()
-                    .assign_constant(N::from(LENGTH as u64));
-
-                let pow = ctx.scalar_integer_ctx.base_chip().mul(&from_index, &length);
-                let pow_bn = field_to_bn(&pow.val);
+                let pow_bn = field_to_bn(&from_index.val);
 
                 let mut bits_le = (0..16)
                     .map(|i| {
@@ -150,7 +144,9 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
                         .scalar_integer_ctx
                         .base_chip()
                         .sum_with_constant(schema, None);
-                    ctx.scalar_integer_ctx.base_chip().assert_equal(&pow, &sum);
+                    ctx.scalar_integer_ctx
+                        .base_chip()
+                        .assert_equal(&from_index, &sum);
                 }
 
                 bits_le.reverse();
@@ -372,7 +368,7 @@ fn test_g2_mul_proof() {
 
     let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
     let tau = bls12_381::Fr::random(&mut rng);
-    let from_index = 0;
+    let from_index = 1;
     let old_points = (0..LENGTH)
         .map(|_| {
             let s = bls12_381::Fr::random(&mut rng);
@@ -381,12 +377,12 @@ fn test_g2_mul_proof() {
             p.to_affine()
         })
         .collect::<Vec<_>>();
-    let mut pow = tau.pow_vartime(&[(from_index * LENGTH) as u64, 0, 0, 0]);
+    let mut scalar = tau.pow_vartime(&[from_index as u64, 0, 0, 0]);
     let mut new_points = vec![];
     for p in old_points.iter() {
-        let new_p = p * pow;
+        let new_p = p * scalar;
         new_points.push(new_p.to_affine());
-        pow = pow * tau;
+        scalar = scalar * tau;
     }
 
     let circuit = Circuit::<Fr> {

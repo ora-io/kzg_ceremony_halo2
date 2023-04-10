@@ -108,7 +108,8 @@ fn prove(taus: Vec<String>) {
             println!("Generating G1 proof {}...", i);
             let old_points = decode_g1_points(chunk);
 
-            let mut pow = tau.pow_vartime(&[(i * G1_LENGTH) as u64, 0, 0, 0]);
+            let from_index = i * G1_LENGTH;
+            let mut pow = tau.pow_vartime(&[from_index as u64, 0, 0, 0]);
             let mut new_points = vec![];
             for p in old_points.iter() {
                 let new_p = p * pow;
@@ -117,14 +118,14 @@ fn prove(taus: Vec<String>) {
             }
 
             let g1_circuit = G1_Circuit::<bls12_381::G1Affine, Fr> {
-                from_index: Some(i),
+                from_index: Some(from_index),
                 tau: Some(tau),
                 points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 _mark: Default::default(),
             };
 
             let instances = circuit_g1_mul::generate_instance(&G1_Instance {
-                from_index: i,
+                from_index,
                 pubkey,
                 old_points,
                 new_points,
@@ -137,20 +138,18 @@ fn prove(taus: Vec<String>) {
         println!("Processing G2 proofs...");
         let number_g2_powers = transcript.num_g2_powers as usize;
         assert_eq!(number_g2_powers, transcript.powers_of_tau.g2_powers.len());
-        assert_eq!(number_g2_powers % G2_LENGTH, 0);
+        assert_eq!(number_g2_powers % G2_LENGTH, 1);
         let number_g2_proofs = number_g2_powers / G2_LENGTH;
 
         let mut proofs_g2 = Vec::with_capacity(number_g2_proofs);
-        for (i, chunk) in transcript
-            .powers_of_tau
-            .g2_powers
+        for (i, chunk) in transcript.powers_of_tau.g2_powers[1..]
             .chunks(G2_LENGTH)
             .enumerate()
         {
             println!("Generating G2 proof {}", i);
             let old_points = decode_g2_points(chunk);
-
-            let mut pow = tau.pow_vartime(&[(i * G1_LENGTH) as u64, 0, 0, 0]);
+            let from_index = i * G2_LENGTH + 1;
+            let mut pow = tau.pow_vartime(&[from_index as u64, 0, 0, 0]);
             let mut new_points = vec![];
             for p in old_points.iter() {
                 let new_p = p * pow;
@@ -159,14 +158,14 @@ fn prove(taus: Vec<String>) {
             }
 
             let g2_circuit = G2_Circuit::<Fr> {
-                from_index: Some(i),
+                from_index: Some(from_index),
                 tau: Some(tau),
                 points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 _mark: Default::default(),
             };
 
             let instances = circuit_g2_mul::generate_instance(&G2_Instance {
-                from_index: i,
+                from_index,
                 pubkey,
                 old_points,
                 new_points,
@@ -245,11 +244,10 @@ fn verify() {
             .enumerate()
         {
             let old_points = decode_g1_points(old_g1_transcript);
-
             let new_points = decode_g1_points(new_g1_transcript);
 
             let instances = circuit_g1_mul::generate_instance(&G1_Instance {
-                from_index: i,
+                from_index: i * G1_LENGTH,
                 pubkey,
                 old_points,
                 new_points,
@@ -260,26 +258,27 @@ fn verify() {
 
         let num_chunks = new_transcript.num_g2_powers as usize / G2_LENGTH;
         assert_eq!(proof.1.len(), num_chunks);
-        assert_eq!(new_transcript.num_g2_powers as usize % G2_LENGTH, 0);
+        assert_eq!(new_transcript.num_g2_powers as usize % G2_LENGTH, 1);
 
+        assert_eq!(
+            old_transcript.powers_of_tau.g2_powers[0],
+            new_transcript.powers_of_tau.g2_powers[0]
+        );
         for (i, (proof_g2, (old_g2_transcript, new_g2_transcript))) in proof
             .1
             .iter()
             .zip(
-                old_transcript
-                    .powers_of_tau
-                    .g2_powers
+                old_transcript.powers_of_tau.g2_powers[1..]
                     .chunks(G2_LENGTH)
-                    .zip(new_transcript.powers_of_tau.g2_powers.chunks(G2_LENGTH)),
+                    .zip(new_transcript.powers_of_tau.g2_powers[1..].chunks(G2_LENGTH)),
             )
             .enumerate()
         {
             let old_points = decode_g2_points(old_g2_transcript);
-
             let new_points = decode_g2_points(new_g2_transcript);
 
             let instances = circuit_g2_mul::generate_instance(&G2_Instance {
-                from_index: i,
+                from_index: i * G2_LENGTH + 1,
                 pubkey,
                 old_points,
                 new_points,
