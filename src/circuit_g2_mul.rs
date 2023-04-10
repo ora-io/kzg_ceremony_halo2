@@ -402,11 +402,11 @@ fn test_g2_mul_proof() {
     let proof = create_proofs(&params, circuit, &pk, &instance);
 
     let vk = VerifyingKey::build(&params);
-    verify_proof(&params, &vk, &proof, &instance).is_ok();
+    verify_proof(&params, &vk, &proof, &instance).unwrap();
 
     let mut instance = instance;
-    instance[0] = Fr::from_str_vartime("1").unwrap();
-    verify_proof(&params, &vk, &proof, &instance).is_err();
+    instance[0] = Fr::from_str_vartime("2").unwrap();
+    verify_proof(&params, &vk, &proof, &instance).unwrap_err();
 }
 
 #[test]

@@ -253,7 +253,7 @@ fn verify() {
                 new_points,
             });
 
-            g1_verify_proof(&g1_params, &g1_vk, &proof_g1, &instances);
+            g1_verify_proof(&g1_params, &g1_vk, &proof_g1, &instances).unwrap();
         }
 
         let num_chunks = new_transcript.num_g2_powers as usize / G2_LENGTH;
@@ -284,7 +284,7 @@ fn verify() {
                 new_points,
             });
 
-            g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).is_ok();
+            g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).unwrap();
         }
     }
 }

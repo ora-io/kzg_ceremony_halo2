@@ -378,14 +378,13 @@ fn test_proof() {
     });
 
     let proof = create_proofs(&params, circuit, &pk, &instance);
-    println!("proof length {}", proof.len());
 
     let vk = VerifyingKey::build(&params);
-    verify_proof(&params, &vk, &proof, &instance);
+    assert!(verify_proof(&params, &vk, &proof, &instance).is_ok());
 
     let mut instance = instance;
     instance[0] = Fr::from_str_vartime("1").unwrap();
-    verify_proof(&params, &vk, &proof, &instance);
+    assert!(verify_proof(&params, &vk, &proof, &instance).is_err());
 }
 
 #[test]
