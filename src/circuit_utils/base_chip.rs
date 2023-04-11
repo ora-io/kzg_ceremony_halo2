@@ -379,7 +379,6 @@ pub trait BaseChipOps<N: FieldExt> {
 
     fn assert_constant(&mut self, a: &AssignedValue<N>, b: N) {
         let one = N::one();
-        assert_eq!(a.val, b);
         self.one_line_add(vec![pair!(a, -one)], Some(b));
     }
 
@@ -467,7 +466,6 @@ pub trait BaseChipOps<N: FieldExt> {
     }
 
     fn assert_true(&mut self, a: &AssignedCondition<N>) {
-        assert!(a.0.val == N::one());
         self.assert_constant(&a.0, N::one())
     }
 

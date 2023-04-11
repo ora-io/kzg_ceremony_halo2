@@ -397,7 +397,7 @@ fn test_circuit() {
     };
     assert_eq!(prover.verify(), Ok(()));
 
-    //
+    // let proof = create_proofs(&params, circuit, &pk, &instance);
     // let vk = VerifyingKey::build(&params);
     // assert!(verify_proof(&params, &vk, &proof, &instance).is_ok());
     //
