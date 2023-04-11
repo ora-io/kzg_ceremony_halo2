@@ -121,6 +121,7 @@ fn prove(taus: Vec<String>) {
                 from_index: Some(from_index),
                 tau: Some(tau),
                 points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
+                new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 _mark: Default::default(),
             };
 
@@ -161,6 +162,7 @@ fn prove(taus: Vec<String>) {
                 from_index: Some(from_index),
                 tau: Some(tau),
                 points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
+                new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 _mark: Default::default(),
             };
 

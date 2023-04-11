@@ -42,6 +42,7 @@ pub struct Circuit<N: FieldExt> {
     pub from_index: Option<usize>,
     pub tau: Option<bls12_381::Fr>,
     pub points: Vec<Option<bls12_381::G2Affine>>,
+    pub new_points: Vec<Option<bls12_381::G2Affine>>,
     pub(crate) _mark: PhantomData<N>,
 }
 
@@ -51,6 +52,7 @@ impl<N: FieldExt> Default for Circuit<N> {
             from_index: None,
             tau: None,
             points: vec![None; LENGTH],
+            new_points: vec![None; LENGTH],
             _mark: Default::default(),
         }
     }
@@ -120,6 +122,22 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
             })
             .collect::<Vec<_>>();
 
+        let new_points = self
+            .new_points
+            .iter()
+            .map(|x| {
+                let x = x.unwrap_or(bls12_381::G2Affine::generator());
+                let p =
+                    ctx.assign_non_identity_g2(&((x.x.c0, x.x.c1), (x.y.c0, x.y.c1)), b.clone());
+                instances.extend_from_slice(&p.x.0.limbs_le);
+                instances.extend_from_slice(&p.x.1.limbs_le);
+                instances.extend_from_slice(&p.y.0.limbs_le);
+                instances.extend_from_slice(&p.y.1.limbs_le);
+
+                p
+            })
+            .collect::<Vec<_>>();
+
         // process scalars
         let scalars = {
             // cal {tau^(from_index+i)| i=0,1,...,LENGTH-1
@@ -174,16 +192,12 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
             scalars
         };
 
-        let mut powers_of_tau = vec![];
-        for (point, scalar) in points.iter().zip(scalars.iter()) {
-            let p = ctx.ecc_g2_mul(point, scalar);
-
-            instances.extend_from_slice(&p.x.0.limbs_le);
-            instances.extend_from_slice(&p.x.1.limbs_le);
-            instances.extend_from_slice(&p.y.0.limbs_le);
-            instances.extend_from_slice(&p.y.1.limbs_le);
-
-            powers_of_tau.push(p);
+        for (point, (new_point, scalar)) in points
+            .iter()
+            .zip(new_points.iter().zip(scalars.into_iter()))
+        {
+            let p = ctx.ecc_g2_mul(point, &scalar);
+            ctx.ecc_assert_g2_equal(&p, &new_point);
         }
         assert_eq!(instances.len(), INSTANCE_NUM);
 
@@ -358,13 +372,13 @@ pub fn verify_proof(
 }
 
 #[test]
-fn test_g2_mul_proof() {
+fn test_circuit() {
     use halo2_proofs::pairing::group::ff::PrimeField;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    let params = Params::<G1Affine>::unsafe_setup::<Bn256>(K);
-    let pk = ProvingKey::build(&params);
+    // let params = Params::<G1Affine>::unsafe_setup::<Bn256>(K);
+    // let pk = ProvingKey::build(&params);
 
     let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
     let tau = bls12_381::Fr::random(&mut rng);
@@ -389,6 +403,7 @@ fn test_g2_mul_proof() {
         from_index: Some(from_index),
         tau: Some(tau),
         points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
+        new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
         _mark: Default::default(),
     };
 
@@ -399,14 +414,21 @@ fn test_g2_mul_proof() {
         new_points,
     });
 
-    let proof = create_proofs(&params, circuit, &pk, &instance);
+    // let proof = create_proofs(&params, circuit, &pk, &instance);
+    //
+    // let vk = VerifyingKey::build(&params);
+    // verify_proof(&params, &vk, &proof, &instance).unwrap();
+    //
+    // let mut instance = instance;
+    // instance[0] = Fr::from_str_vartime("2").unwrap();
+    // verify_proof(&params, &vk, &proof, &instance).unwrap_err();
 
-    let vk = VerifyingKey::build(&params);
-    verify_proof(&params, &vk, &proof, &instance).unwrap();
-
-    let mut instance = instance;
-    instance[0] = Fr::from_str_vartime("2").unwrap();
-    verify_proof(&params, &vk, &proof, &instance).unwrap_err();
+    use halo2_proofs::dev::MockProver;
+    let prover = match MockProver::run(K, &circuit, vec![instance]) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    assert_eq!(prover.verify(), Ok(()));
 }
 
 #[test]

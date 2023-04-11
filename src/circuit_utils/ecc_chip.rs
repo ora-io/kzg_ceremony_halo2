@@ -459,6 +459,22 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
         p
     }
 
+    fn ecc_assert_equal(&mut self, a: &AssignedPoint<C, N>, b: &AssignedPoint<C, N>) {
+        let eq_x = self.base_integer_chip().is_int_equal(&a.x, &b.x);
+        let eq_y = self.base_integer_chip().is_int_equal(&a.y, &b.y);
+        let eq_z = self.base_integer_chip().base_chip().xnor(&a.z, &b.z);
+        let eq_xy = self.base_integer_chip().base_chip().and(&eq_x, &eq_y);
+        let eq_xyz = self.base_integer_chip().base_chip().and(&eq_xy, &eq_z);
+
+        let is_both_identity = self.base_integer_chip().base_chip().and(&a.z, &b.z);
+        let eq = self
+            .base_integer_chip()
+            .base_chip()
+            .or(&eq_xyz, &is_both_identity);
+
+        self.base_integer_chip().base_chip().assert_true(&eq)
+    }
+
     fn to_point_with_curvature(
         &mut self,
         a: AssignedPoint<C, N>,
@@ -637,6 +653,27 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
             .bisec_cond(&a.z, &a.z, &p.z);
 
         p
+    }
+
+    fn ecc_assert_g2_equal(&mut self, a: &AssignedG2Affine<C, N>, b: &AssignedG2Affine<C, N>) {
+        let eq_x_c0 = self.base_integer_chip().is_int_equal(&a.x.0, &b.x.0);
+        let eq_x_c1 = self.base_integer_chip().is_int_equal(&a.x.1, &b.x.1);
+        let eq_y_c0 = self.base_integer_chip().is_int_equal(&a.y.0, &b.y.0);
+        let eq_y_c1 = self.base_integer_chip().is_int_equal(&a.y.1, &b.y.1);
+
+        let eq_z = self.base_integer_chip().base_chip().xnor(&a.z, &b.z);
+        let eq_x = self.base_integer_chip().base_chip().and(&eq_x_c0, &eq_x_c1);
+        let eq_y = self.base_integer_chip().base_chip().and(&eq_y_c0, &eq_y_c1);
+        let eq_xy = self.base_integer_chip().base_chip().and(&eq_x, &eq_y);
+        let eq_xyz = self.base_integer_chip().base_chip().and(&eq_xy, &eq_z);
+
+        let is_both_identity = self.base_integer_chip().base_chip().and(&a.z, &b.z);
+        let eq = self
+            .base_integer_chip()
+            .base_chip()
+            .or(&eq_xyz, &is_both_identity);
+
+        self.base_integer_chip().base_chip().assert_true(&eq)
     }
 
     fn to_g2_point_with_curvature(
