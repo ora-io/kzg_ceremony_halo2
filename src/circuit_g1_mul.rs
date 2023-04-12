@@ -108,7 +108,7 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
             .iter()
             .map(|x| {
                 let x = x.unwrap_or(C::identity());
-                let p = ctx.assign_point(&x);
+                let p = ctx.assign_non_zero_point(&x);
                 instances.extend_from_slice(&p.x.limbs_le);
                 instances.extend_from_slice(&p.y.limbs_le);
 
@@ -120,7 +120,7 @@ impl<C: CurveAffine, N: FieldExt> plonk::Circuit<N> for Circuit<C, N> {
             .iter()
             .map(|x| {
                 let x = x.unwrap_or(C::identity());
-                let p = ctx.assign_point(&x);
+                let p = ctx.assign_non_zero_point(&x);
                 instances.extend_from_slice(&p.x.limbs_le);
                 instances.extend_from_slice(&p.y.limbs_le);
 

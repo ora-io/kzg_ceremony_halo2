@@ -300,20 +300,16 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
         AssignedPoint::new(x, y, AssignedCondition(z))
     }
 
-    fn assign_point(&mut self, c: &C) -> AssignedPoint<C, N> {
-        let coordinates = c.coordinates();
-        let t: Option<_> = coordinates.map(|v| (v.x().clone(), v.y().clone())).into();
-        let (x, y) = t.unwrap_or((C::Base::zero(), C::Base::zero()));
-        // TODO: fix identity.
-        let z = if c.is_identity().into() {
-            N::one()
-        } else {
-            N::zero()
-        };
+    fn assign_non_zero_point(&mut self, c: &C) -> AssignedPoint<C, N> {
+        let coordinates = c.coordinates().unwrap();
+        let (x, y) = (coordinates.x(), coordinates.y());
 
-        let x = self.base_integer_chip().assign_w(&field_to_bn(&x));
-        let y = self.base_integer_chip().assign_w(&field_to_bn(&y));
-        let z = self.base_integer_chip().base_chip().assign_bit(z);
+        let x = self
+            .base_integer_chip()
+            .assign_w(&field_to_bn::<C::Base>(&x));
+        let y = self
+            .base_integer_chip()
+            .assign_w(&field_to_bn::<C::Base>(&y));
 
         // Constrain y^2 = x^3 + b
         // TODO: Optimize b
@@ -324,12 +320,14 @@ pub trait EccChipBaseOps<C: CurveAffine, N: FieldExt>: Fq2ChipOps<C::Base, N> {
         let right = self.base_integer_chip().int_add(&x3, &b);
 
         let eq = self.base_integer_chip().is_int_equal(&y2, &right);
-        let eq_or_identity = self.base_integer_chip().base_chip().or(&eq, &z);
-        self.base_integer_chip()
-            .base_chip()
-            .assert_true(&eq_or_identity);
+        self.base_integer_chip().base_chip().assert_true(&eq);
 
-        AssignedPoint::new(x, y, z)
+        let z = self
+            .base_integer_chip()
+            .base_chip()
+            .assign_constant(N::zero());
+
+        AssignedPoint::new(x, y, AssignedCondition(z))
     }
 
     fn assign_identity(&mut self) -> AssignedPointWithCurvature<C, N> {
