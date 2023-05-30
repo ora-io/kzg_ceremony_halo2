@@ -1,2 +1,3 @@
-mod message;
-mod request;
+pub mod message;
+pub mod prover;
+pub mod request;

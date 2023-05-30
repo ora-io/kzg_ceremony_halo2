@@ -1,8 +1,8 @@
 use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 
-use crate::assign::{AssignedCondition, AssignedFq2};
 use crate::circuit_utils::ecc_chip::EccBaseIntegerChipWrapper;
-use crate::utils::field_to_bn;
+use crate::circuits::assign::{AssignedCondition, AssignedFq2};
+use crate::circuits::utils::field_to_bn;
 
 pub trait Fq2ChipOps<W: BaseExt, N: FieldExt>: EccBaseIntegerChipWrapper<W, N> {
     fn fq2_reduce(&mut self, x: &AssignedFq2<W, N>) -> AssignedFq2<W, N> {

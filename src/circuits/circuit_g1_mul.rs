@@ -22,8 +22,8 @@ use crate::circuit_utils::integer_chip::IntegerChipOps;
 use crate::circuit_utils::range_chip::{
     RangeChip, RangeChipConfig, RangeChipOps, COMMON_RANGE_BITS, MAX_CHUNKS,
 };
-use crate::context::{Context, GeneralScalarEccContext};
-use crate::utils::{bn_to_field, field_to_bn};
+use crate::circuits::context::{Context, GeneralScalarEccContext};
+use crate::circuits::utils::{bn_to_field, field_to_bn};
 
 pub const LENGTH: usize = 32;
 #[allow(dead_code)]
@@ -349,7 +349,7 @@ pub fn verify_proof(
 
 #[test]
 fn test_circuit() {
-    use halo2_proofs::pairing::group::ff::PrimeField;
+    // use halo2_proofs::pairing::group::ff::PrimeField;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
