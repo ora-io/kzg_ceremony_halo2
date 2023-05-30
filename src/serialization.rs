@@ -19,7 +19,7 @@ pub struct Witness {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Transcripts {
+pub struct Transcript {
     #[serde(rename = "numG1Powers")]
     pub num_g1_powers: u32,
     #[serde(rename = "numG2Powers")]
@@ -31,11 +31,28 @@ pub struct Transcripts {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BatchTranscript {
-    pub transcripts: Vec<Transcripts>,
+    pub transcripts: Vec<Transcript>,
     #[serde(rename = "participantIds")]
     pub participant_ids: Vec<String>,
     #[serde(rename = "participantEcdsaSignatures")]
     pub participant_ecdsa_signatures: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Contribution {
+    #[serde(rename = "numG1Powers")]
+    pub num_g1_powers: u32,
+    #[serde(rename = "numG2Powers")]
+    pub num_g2_powers: u32,
+    #[serde(rename = "powersOfTau")]
+    pub powers_of_tau: PowersOfTau,
+    #[serde(rename = "potPubkey")]
+    pub pot_pubkey: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchContribution {
+    contributions: Vec<Contribution>,
 }
 
 #[test]
