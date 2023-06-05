@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 
 #[derive(Serialize, Deserialize)]
 pub struct ErrorMsg {
@@ -12,9 +13,10 @@ pub struct MsgStatus {
     pub sequencer_address: String,
 }
 
-impl MsgStatus {
-    fn to_string(&self) -> String {
-        format!(
+impl Display for MsgStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "Sequencer status:\n  Lobby size: {}\n  NumContributions: {}\n  SequencerAddress: {}\n",
             self.lobby_size, self.num_contributions, self.sequencer_address
         )
@@ -45,6 +47,16 @@ impl MsgContributeReceipt {
     fn to_string(&self) -> String {
         format!(
             "Contribute Receipt:\n  Receipt: {}\n  Signature: {}\n",
+            self.receipt, self.signature
+        )
+    }
+}
+
+impl Display for MsgContributeReceipt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "receipt: {}\n  signature: {}\n",
             self.receipt, self.signature
         )
     }

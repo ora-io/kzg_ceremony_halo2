@@ -2,31 +2,33 @@ extern crate reqwest;
 extern crate serde;
 extern crate serde_json;
 
-use crate::client::message::{MsgContributeReceipt, MsgStatus};
-use crate::serialization::BatchContribution;
-use crate::BatchTranscript;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::StatusCode;
 use std::error::Error;
 
-struct Client {
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::StatusCode;
+
+use crate::client::message::{MsgContributeReceipt, MsgStatus};
+use crate::serialization::{BatchContribution, BatchContributionJson, BatchTranscript, Decode};
+use crate::BatchTranscriptJson;
+
+pub struct Client {
     url: String,
     client: reqwest::Client,
 }
 
-#[derive(Debug)]
-enum Status {
+#[derive(Debug, Eq, PartialEq)]
+pub enum Status {
     StatusReauth,
     StatusProceed,
 }
 
 #[derive(Debug)]
-struct CustomError {
+pub struct CustomError {
     message: String,
 }
 
 impl CustomError {
-    fn new(message: &str) -> Self {
+    pub fn new(message: &str) -> Self {
         Self {
             message: message.to_string(),
         }
@@ -42,7 +44,7 @@ impl std::fmt::Display for CustomError {
 impl Error for CustomError {}
 
 impl Client {
-    fn new(sequencer_url: String) -> Client {
+    pub fn new(sequencer_url: String) -> Client {
         Client {
             url: sequencer_url,
             client: reqwest::Client::new(),
@@ -68,7 +70,7 @@ impl Client {
             .await
     }
 
-    async fn get_current_status(&self) -> Result<MsgStatus, Box<dyn Error>> {
+    pub async fn get_current_status(&self) -> Result<MsgStatus, Box<dyn Error>> {
         let resp = self
             .client
             .get(&format!("{}/info/status", self.url))
@@ -86,7 +88,7 @@ impl Client {
         Ok(msg)
     }
 
-    async fn get_current_state(&self) -> Result<BatchTranscript, Box<dyn Error>> {
+    pub async fn get_current_state(&self) -> Result<BatchTranscript, Box<dyn Error>> {
         let resp = self
             .client
             .get(&format!("{}/info/current_state", self.url))
@@ -100,14 +102,14 @@ impl Client {
             ))));
         }
 
-        let state: BatchTranscript = resp.json().await?;
-        Ok(state)
+        let state: BatchTranscriptJson = resp.json().await?;
+        Ok(state.decode())
     }
 
-    async fn post_try_contribute(
+    pub async fn post_try_contribute(
         &self,
         session_id: &str,
-    ) -> Result<(Option<BatchContribution>, Status), Box<dyn Error>> {
+    ) -> Result<(Option<BatchContributionJson>, Status), Box<dyn Error>> {
         let bearer = format!("Bearer {}", session_id);
         let resp = self
             .post_with_auth(
@@ -119,32 +121,26 @@ impl Client {
             .await?;
 
         if !resp.status().is_success() {
-            match resp.status() {
-                StatusCode::BAD_REQUEST => {
-                    return Err(Box::new(CustomError::new(
-                        "call came to early. rate limited",
-                    )));
-                }
-                StatusCode::UNAUTHORIZED => {
-                    return Ok((None, Status::StatusReauth));
-                }
-                _ => {
-                    return Err(Box::new(CustomError::new(&format!(
-                        "Unexpected http code: {}",
-                        resp.status()
-                    ))));
-                }
-            }
+            return match resp.status() {
+                StatusCode::BAD_REQUEST => Err(Box::new(CustomError::new(
+                    "call came to early. rate limited",
+                ))),
+                StatusCode::UNAUTHORIZED => Ok((None, Status::StatusReauth)),
+                _ => Err(Box::new(CustomError::new(&format!(
+                    "Unexpected http code: {}",
+                    resp.status()
+                )))),
+            };
         }
 
-        let bc: BatchContribution = resp.json().await?;
+        let bc: BatchContributionJson = resp.json().await?;
         Ok((Some(bc), Status::StatusProceed))
     }
 
-    async fn post_contribute(
+    pub async fn post_contribute(
         &self,
         session_id: &str,
-        bc: &BatchContribution,
+        bc: &BatchContributionJson,
     ) -> Result<MsgContributeReceipt, Box<dyn Error>> {
         let bearer = format!("Bearer {}", session_id);
         let json_bc = serde_json::to_string(bc).unwrap();
@@ -158,18 +154,14 @@ impl Client {
             .await?;
 
         if resp.status() != StatusCode::OK {
-            match resp.status() {
-                StatusCode::BAD_REQUEST => {
-                    return Err(Box::new(CustomError::new("Invalid request.")));
-                }
+            return match resp.status() {
+                StatusCode::BAD_REQUEST => Err(Box::new(CustomError::new("Invalid request."))),
 
-                _ => {
-                    return Err(Box::new(CustomError::new(&format!(
-                        "Unexpected http code: {}",
-                        resp.status()
-                    ))));
-                }
-            }
+                _ => Err(Box::new(CustomError::new(&format!(
+                    "Unexpected http code: {}",
+                    resp.status()
+                )))),
+            };
         }
 
         let msg: MsgContributeReceipt = resp.json().await?;
