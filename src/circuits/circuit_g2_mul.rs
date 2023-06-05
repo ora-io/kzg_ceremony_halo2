@@ -20,16 +20,14 @@ use crate::circuit_utils::base_chip::{BaseChip, BaseChipConfig};
 use crate::circuit_utils::ecc_chip::{EccChipBaseOps, EccChipScalarOps};
 use crate::circuit_utils::fq2::Fq2ChipOps;
 use crate::circuit_utils::integer_chip::IntegerChipOps;
-use crate::circuit_utils::range_chip::{
-    RangeChip, RangeChipConfig, RangeChipOps, COMMON_RANGE_BITS, MAX_CHUNKS,
-};
+use crate::circuit_utils::range_chip::{RangeChip, RangeChipConfig, RangeChipOps};
 use crate::circuits::context::{Context, GeneralScalarEccContext};
-use crate::circuits::utils::{bn_to_field, field_to_bn};
+use crate::circuits::utils::{bn_to_field, field_to_bn, split_g2_point};
 
 pub const LENGTH: usize = 8;
 #[allow(dead_code)]
 const K: u32 = 23;
-const INSTANCE_NUM: usize = 1 + 8 + 8 * 2 * 2 * LENGTH;
+const INSTANCE_NUM: usize = 1 + 16 + 8 * 2 * 2 * LENGTH;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -41,6 +39,7 @@ pub struct Config {
 pub struct Circuit<N: FieldExt> {
     pub from_index: Option<usize>,
     pub tau: Option<bls12_381::Fr>,
+    pub pubkey: Option<bls12_381::G2Affine>,
     pub points: Vec<Option<bls12_381::G2Affine>>,
     pub new_points: Vec<Option<bls12_381::G2Affine>>,
     pub(crate) _mark: PhantomData<N>,
@@ -51,6 +50,7 @@ impl<N: FieldExt> Default for Circuit<N> {
         Self {
             from_index: None,
             tau: None,
+            pubkey: None,
             points: vec![None; LENGTH],
             new_points: vec![None; LENGTH],
             _mark: Default::default(),
@@ -92,20 +92,34 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
             .assign_small_number(self.from_index.unwrap_or_default(), 16);
         instances.push(from_index.clone());
 
+        // load pubkey
+        let pubkey = self.pubkey.unwrap_or(bls12_381::G2Affine::generator());
+        let four = bls12_381::Fq::one().double().double();
+        let b = ctx.fq2_assign_constant((four, four));
+        let pubkey = ctx.assign_non_identity_g2(
+            &((pubkey.x.c0, pubkey.x.c1), (pubkey.y.c0, pubkey.y.c1)),
+            b.clone(),
+        );
+
+        instances.extend_from_slice(&pubkey.x.0.limbs_le);
+        instances.extend_from_slice(&pubkey.x.1.limbs_le);
+        instances.extend_from_slice(&pubkey.y.0.limbs_le);
+        instances.extend_from_slice(&pubkey.y.1.limbs_le);
+
         // load tau and check pubkey
         let tau = ctx
             .scalar_integer_ctx
             .assign_w(&field_to_bn(&self.tau.unwrap_or_default()));
+        let generator = ctx.assign_non_identity_constant_g2({
+            let g = bls12_381::G2Affine::generator();
+            &((g.x.c0, g.x.c1), (g.y.c0, g.y.c1))
+        });
 
-        let generator = ctx.assign_constant_point(&bls12_381::G1Affine::generator());
-        let pubkey = ctx.ecc_mul(&generator, tau.clone());
-        instances.extend_from_slice(&pubkey.x.limbs_le);
-        instances.extend_from_slice(&pubkey.y.limbs_le);
+        let expected_pubkey = ctx.ecc_g2_mul(&generator, &tau);
+        ctx.ecc_assert_g2_equal(&pubkey, &expected_pubkey);
 
         // load points
         assert_eq!(self.points.len(), LENGTH);
-        let four = bls12_381::Fq::one().double().double();
-        let b = ctx.fq2_assign_constant((four, four));
         let points = self
             .points
             .iter()
@@ -273,7 +287,7 @@ impl ProvingKey {
 #[derive(Clone, Debug)]
 pub struct Instance {
     pub(crate) from_index: usize,
-    pub(crate) pubkey: bls12_381::G1Affine,
+    pub(crate) pubkey: bls12_381::G2Affine,
     pub(crate) old_points: Vec<bls12_381::G2Affine>,
     pub(crate) new_points: Vec<bls12_381::G2Affine>,
 }
@@ -281,42 +295,13 @@ pub struct Instance {
 pub(crate) fn generate_instance(instance: &Instance) -> Vec<Fr> {
     let mut halo2_instances = vec![bn_to_field::<Fr>(&BigUint::from(instance.from_index))];
 
-    let bits = COMMON_RANGE_BITS * MAX_CHUNKS;
-    let bit_mask = (BigUint::from(1u64) << bits) - 1u64;
-
-    let split_point = |p: &bls12_381::G2Affine| {
-        let mut limbs = vec![];
-        for el in vec![p.x.c0, p.x.c1, p.y.c0, p.y.c1].iter() {
-            let bu = field_to_bn(el);
-            let part = (0..4)
-                .map(|i| bn_to_field::<Fr>(&((&bu >> (i * bits)) & &bit_mask)))
-                .collect::<Vec<_>>();
-            limbs.extend_from_slice(&part);
-        }
-
-        limbs
-    };
-
-    halo2_instances.extend_from_slice(&{
-        let mut limbs = vec![];
-
-        let pubkey = instance.pubkey;
-        for el in vec![pubkey.x, pubkey.y].iter() {
-            let bu = field_to_bn(el);
-            let part = (0..4)
-                .map(|i| bn_to_field::<Fr>(&((&bu >> (i * bits)) & &bit_mask)))
-                .collect::<Vec<_>>();
-            limbs.extend_from_slice(&part);
-        }
-
-        limbs
-    });
+    halo2_instances.extend_from_slice(&split_g2_point(&instance.pubkey));
 
     let _ = instance
         .old_points
         .iter()
         .chain(instance.new_points.iter())
-        .map(|p| halo2_instances.extend_from_slice(&split_point(&p)))
+        .map(|p| halo2_instances.extend_from_slice(&split_g2_point(&p)))
         .collect::<Vec<_>>();
 
     assert_eq!(halo2_instances.len(), INSTANCE_NUM);
@@ -377,9 +362,6 @@ fn test_circuit() {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    // let params = Params::<G1Affine>::unsafe_setup::<Bn256>(K);
-    // let pk = ProvingKey::build(&params);
-
     let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
     let tau = bls12_381::Fr::random(&mut rng);
     let from_index = 1;
@@ -402,6 +384,7 @@ fn test_circuit() {
     let circuit = Circuit::<Fr> {
         from_index: Some(from_index),
         tau: Some(tau),
+        pubkey: Some((bls12_381::G2Affine::generator() * tau).to_affine()),
         points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
         new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
         _mark: Default::default(),
@@ -409,11 +392,21 @@ fn test_circuit() {
 
     let instance = generate_instance(&Instance {
         from_index,
-        pubkey: (bls12_381::G1Affine::generator() * tau).to_affine(),
+        pubkey: (bls12_381::G2Affine::generator() * tau).to_affine(),
         old_points,
         new_points,
     });
 
+    use halo2_proofs::dev::MockProver;
+    let prover = match MockProver::run(K, &circuit, vec![instance]) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    assert_eq!(prover.verify(), Ok(()));
+
+    // println!("Test creating proof...");
+    // let params = Params::<G1Affine>::unsafe_setup::<Bn256>(K);
+    // let pk = ProvingKey::build(&params);
     // let proof = create_proofs(&params, circuit, &pk, &instance);
     //
     // let vk = VerifyingKey::build(&params);
@@ -422,13 +415,6 @@ fn test_circuit() {
     // let mut instance = instance;
     // instance[0] = Fr::from_str_vartime("2").unwrap();
     // verify_proof(&params, &vk, &proof, &instance).unwrap_err();
-
-    use halo2_proofs::dev::MockProver;
-    let prover = match MockProver::run(K, &circuit, vec![instance]) {
-        Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
-    };
-    assert_eq!(prover.verify(), Ok(()));
 }
 
 #[test]
