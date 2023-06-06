@@ -3,6 +3,7 @@ use crate::client::SEQUENCER;
 
 use crate::bls12_381::{pairing, G1Affine, G2Affine};
 use halo2_proofs::arithmetic::parallelize;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 #[tokio::main]
 pub async fn verify_transcript() {
@@ -30,16 +31,19 @@ pub async fn verify_transcript() {
         });
         // `tau_update_check`
         let l = transcript.witness.running_products.len() - 1;
-        for j in 0..l - 1 {
-            let cur_running_product = transcript.witness.running_products[j];
-            let next_running_product = transcript.witness.running_products[j + 1];
-            let pot_pubkey = transcript.witness.pot_pubkeys[j + 1];
+        let checks = (0..l - 1)
+            .into_par_iter()
+            .map(|j| {
+                let cur_running_product = transcript.witness.running_products[j];
+                let next_running_product = transcript.witness.running_products[j + 1];
+                let pot_pubkey = transcript.witness.pot_pubkeys[j + 1];
 
-            assert_eq!(
-                pairing(&cur_running_product, &pot_pubkey),
-                pairing(&next_running_product, &g2_generator),
-                "paring check failed"
-            )
+                pairing(&cur_running_product, &pot_pubkey)
+                    == pairing(&next_running_product, &g2_generator)
+            })
+            .collect::<Vec<_>>();
+        if checks.iter().any(|&check| !check) {
+            panic!("paring check failed");
         }
 
         // Check that the last running product is equal to G1 first power.
@@ -59,29 +63,33 @@ pub async fn verify_transcript() {
         // `g1PowersCheck`: checks that the G1 powers in the transcript are coherent powers.
         let l = transcript.powers_of_tau.g1_powers.len();
         let base_tau_g2 = transcript.powers_of_tau.g2_powers[1];
-        for j in 0..l - 1 {
-            let cur_g1 = transcript.powers_of_tau.g1_powers[j];
-            let next_g1 = transcript.powers_of_tau.g1_powers[j + 1];
+        let checks = (0..l - 1)
+            .into_par_iter()
+            .map(|j| {
+                let cur_g1 = transcript.powers_of_tau.g1_powers[j];
+                let next_g1 = transcript.powers_of_tau.g1_powers[j + 1];
 
-            assert_eq!(
-                pairing(&cur_g1, &base_tau_g2),
-                pairing(&next_g1, &g2_generator),
-                "pairing check failed"
-            );
+                pairing(&cur_g1, &base_tau_g2) == pairing(&next_g1, &g2_generator)
+            })
+            .collect::<Vec<_>>();
+        if checks.iter().any(|&check| !check) {
+            panic!("paring check failed");
         }
 
         // `g2PowersCheck`: checks that the G2 powers in the transcript are coherent powers.
         let l = transcript.powers_of_tau.g2_powers.len();
         let base_tau_g1 = transcript.powers_of_tau.g1_powers[1];
-        for j in 0..l - 1 {
-            let cur_g2 = transcript.powers_of_tau.g2_powers[j];
-            let next_g2 = transcript.powers_of_tau.g2_powers[j + 1];
+        let checks = (0..l - 1)
+            .into_par_iter()
+            .map(|j| {
+                let cur_g2 = transcript.powers_of_tau.g2_powers[j];
+                let next_g2 = transcript.powers_of_tau.g2_powers[j + 1];
 
-            assert_eq!(
-                pairing(&base_tau_g1, &cur_g2),
-                pairing(&g1_generator, &next_g2),
-                "pairing check failed"
-            );
+                pairing(&base_tau_g1, &cur_g2) == pairing(&g1_generator, &next_g2)
+            })
+            .collect::<Vec<_>>();
+        if checks.iter().any(|&check| !check) {
+            panic!("paring check failed");
         }
     }
     let duration = start.elapsed();
