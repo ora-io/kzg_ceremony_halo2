@@ -302,31 +302,6 @@ impl Encode for BatchContribution {
     }
 }
 
-// TODO: remove
-pub fn decode_g1_points(points: &[String]) -> Vec<G1Affine> {
-    points
-        .iter()
-        .map(|p| {
-            let bytes = hex::decode(&p[2..]).expect("Failed to decode point in hex string");
-
-            G1Affine::from_compressed(&bytes.try_into().expect("Error length"))
-                .expect("Deserialize G1 failed")
-        })
-        .collect::<Vec<_>>()
-}
-
-pub fn decode_g2_points(points: &[String]) -> Vec<G2Affine> {
-    points
-        .iter()
-        .map(|p| {
-            let bytes = hex::decode(&p[2..]).expect("Failed to decode point in hex string");
-
-            G2Affine::from_compressed(&bytes.try_into().expect("Error length"))
-                .expect("Deserialize G1 failed")
-        })
-        .collect::<Vec<_>>()
-}
-
 pub fn scalar_from_string(tau: &String) -> Fr {
     let hex_str = if tau.starts_with("0x") {
         &tau[2..]

@@ -8,6 +8,7 @@ use halo2_proofs::arithmetic::Field;
 
 use crate::bls12_381::{Fr, G2Affine};
 use crate::client::message::{MsgContributeReceipt, MsgStatus};
+use crate::client::prover::{prove, verify};
 use crate::client::request::{Client, CustomError, Status};
 use crate::client::{MIN_RANDOMNESS_LEN, SEQUENCER};
 use crate::serialization::{BatchContribution, Contribution, Decode, Encode, PowersOfTau};
@@ -82,7 +83,8 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
 
     println!("Starting to compute new contribution.");
     let start = std::time::Instant::now();
-    let new_batch_contribution = contribute(&prev_batch_contribution, randomness);
+    let taus = tau(randomness, prev_batch_contribution.contributions.len());
+    let new_batch_contribution = contribute(&prev_batch_contribution, &taus);
     let duration = start.elapsed();
     println!("Contribution ready, took {}s", duration.as_secs());
 
@@ -96,6 +98,11 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
         .expect("Write new_batch_contribution failed");
     let duration = now.elapsed();
     println!("Serialization and storing took {}s", duration.as_secs());
+
+    // Prove
+    prove(&prev_batch_contribution, &new_batch_contribution, &taus);
+    //verify
+    verify();
 
     println!("Sending contribution.");
     let receipt = client
@@ -115,9 +122,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     }
 }
 
-fn contribute(pre_bc: &BatchContribution, randomness: String) -> BatchContribution {
-    let taus = tau(randomness, pre_bc.contributions.len());
-
+fn contribute(pre_bc: &BatchContribution, taus: &Vec<Fr>) -> BatchContribution {
     let mut contributions = vec![];
     for (contribution, tau) in pre_bc.contributions.iter().zip(taus.iter()) {
         let powers_of_tau: Vec<_> = std::iter::repeat(tau)

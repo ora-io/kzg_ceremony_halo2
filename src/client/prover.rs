@@ -53,7 +53,7 @@ pub fn prove(
     {
         println!("Processing contributions {}...", i);
 
-        let pubkey = (bls12_381::G1Affine::generator() * tau).to_affine();
+        let pubkey = (bls12_381::G2Affine::generator() * tau).to_affine();
 
         println!("Processing G1 proofs...");
         let number_g1_powers = old_contribution.num_g1_powers as usize;
@@ -71,9 +71,10 @@ pub fn prove(
             println!("Generating G1 proof {}.{}...", i, j);
             let from_index = i * G1_LENGTH;
 
-            let g1_circuit = G1_Circuit::<bls12_381::G1Affine, Fr> {
+            let g1_circuit = G1_Circuit::<Fr> {
                 from_index: Some(from_index),
-                tau: Some(tau),
+                tau: Some(*tau),
+                pubkey: Some(pubkey),
                 points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 _mark: Default::default(),
@@ -107,6 +108,7 @@ pub fn prove(
             let g2_circuit = G2_Circuit::<Fr> {
                 from_index: Some(from_index),
                 tau: Some(*tau),
+                pubkey: Some(pubkey),
                 points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
                 _mark: Default::default(),
@@ -168,90 +170,60 @@ pub fn verify() {
             .iter()
             .zip(new_contributions.contributions.iter()),
     ) {
-        let pubkey = {
-            let str = new_transcript
-                .witness
-                .pot_pubkeys
-                .last()
-                .expect("Should exist");
+        let pubkey = new_contribution.pot_pubkey;
 
-            let bytes = hex::decode(&str[2..]).expect("Failed to decode point in hex string");
-
-            bls12_381::G1Affine::from_compressed(&bytes.try_into().expect("Error length"))
-                .expect("Deserialize pubkey failed")
-        };
-
-        let num_chunks = new_transcript.num_g1_powers as usize / G1_LENGTH;
+        let num_chunks = new_contribution.num_g1_powers as usize / G1_LENGTH;
         assert_eq!(proof.0.len(), num_chunks);
-        assert_eq!(new_transcript.num_g1_powers as usize % G1_LENGTH, 0);
+        assert_eq!(new_contribution.num_g1_powers as usize % G1_LENGTH, 0);
 
-        for (i, (proof_g1, (old_g1_transcript, new_g1_transcript))) in proof
+        for (i, (proof_g1, (old_points, new_points))) in proof
             .0
             .iter()
             .zip(
-                old_transcript
+                old_contribution
                     .powers_of_tau
                     .g1_powers
                     .chunks(G1_LENGTH)
-                    .zip(new_transcript.powers_of_tau.g1_powers.chunks(G1_LENGTH)),
+                    .zip(old_contribution.powers_of_tau.g1_powers.chunks(G1_LENGTH)),
             )
             .enumerate()
         {
-            let old_points = serialization::decode_g1_points(old_g1_transcript);
-            let new_points = serialization::decode_g1_points(new_g1_transcript);
-
             let instances = circuit_g1_mul::generate_instance(&G1_Instance {
                 from_index: i * G1_LENGTH,
                 pubkey,
-                old_points,
-                new_points,
+                old_points: old_points.to_vec(),
+                new_points: new_points.to_vec(),
             });
 
             g1_verify_proof(&g1_params, &g1_vk, &proof_g1, &instances).unwrap();
         }
 
-        let num_chunks = new_transcript.num_g2_powers as usize / G2_LENGTH;
+        let num_chunks = new_contribution.num_g2_powers as usize / G2_LENGTH;
         assert_eq!(proof.1.len(), num_chunks);
-        assert_eq!(new_transcript.num_g2_powers as usize % G2_LENGTH, 1);
+        assert_eq!(new_contribution.num_g2_powers as usize % G2_LENGTH, 1);
 
         assert_eq!(
-            old_transcript.powers_of_tau.g2_powers[0],
-            new_transcript.powers_of_tau.g2_powers[0]
+            old_contribution.powers_of_tau.g2_powers[0],
+            new_contribution.powers_of_tau.g2_powers[0]
         );
-        for (i, (proof_g2, (old_g2_transcript, new_g2_transcript))) in proof
+        for (i, (proof_g2, (old_points, new_points))) in proof
             .1
             .iter()
             .zip(
-                old_transcript.powers_of_tau.g2_powers[1..]
+                old_contribution.powers_of_tau.g2_powers[1..]
                     .chunks(G2_LENGTH)
-                    .zip(new_transcript.powers_of_tau.g2_powers[1..].chunks(G2_LENGTH)),
+                    .zip(new_contribution.powers_of_tau.g2_powers[1..].chunks(G2_LENGTH)),
             )
             .enumerate()
         {
-            let old_points = serialization::decode_g2_points(old_g2_transcript);
-            let new_points = serialization::decode_g2_points(new_g2_transcript);
-
             let instances = circuit_g2_mul::generate_instance(&G2_Instance {
                 from_index: i * G2_LENGTH + 1,
                 pubkey,
-                old_points,
-                new_points,
+                old_points: old_points.to_vec(),
+                new_points: new_points.to_vec(),
             });
 
             g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).unwrap();
         }
     }
-}
-
-#[tokio::main]
-async fn pull_transcripts() -> BatchTranscriptJson {
-    println!("Pulling transcripts...");
-
-    let transcripts =
-        match reqwest::get("https://seq.ceremony.ethereum.org/info/current_state").await {
-            Ok(resp) => resp.json().await.unwrap(),
-            Err(err) => panic!("Error: {}", err),
-        };
-
-    transcripts
 }
