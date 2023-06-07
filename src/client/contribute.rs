@@ -122,7 +122,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     }
 }
 
-fn contribute(pre_bc: &BatchContribution, taus: &Vec<Fr>) -> BatchContribution {
+pub(crate) fn contribute(pre_bc: &BatchContribution, taus: &Vec<Fr>) -> BatchContribution {
     let mut contributions = vec![];
     for (contribution, tau) in pre_bc.contributions.iter().zip(taus.iter()) {
         let powers_of_tau: Vec<_> = std::iter::repeat(tau)

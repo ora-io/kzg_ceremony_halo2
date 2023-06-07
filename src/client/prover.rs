@@ -227,3 +227,66 @@ pub fn verify() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::client::contribute::contribute;
+    use crate::client::prover::prove;
+    use crate::client::request::Client;
+    use crate::client::SEQUENCER;
+    use crate::serialization::{BatchContribution, Contribution, Encode, PowersOfTau};
+    use halo2_proofs::arithmetic::Field;
+    use halo2_proofs::pairing::bls12_381::Fr;
+    use rand::rngs::OsRng;
+    use std::io::Write;
+    use std::time::Instant;
+
+    #[tokio::test]
+    async fn pull_and_test() {
+        let client = Client::new(SEQUENCER.to_string());
+        println!("Pull previous transcripts");
+        let cur_state = client.get_current_state().await.unwrap();
+        println!("End");
+        let old_contributions = cur_state
+            .transcripts
+            .iter()
+            .map(|t| Contribution {
+                num_g1_powers: t.num_g1_powers,
+                num_g2_powers: t.num_g2_powers,
+                powers_of_tau: PowersOfTau {
+                    g1_powers: t.powers_of_tau.g1_powers.clone(),
+                    g2_powers: t.powers_of_tau.g2_powers.clone(),
+                },
+                pot_pubkey: Default::default(),
+            })
+            .collect::<Vec<_>>();
+        let old_contributions = BatchContribution {
+            contributions: old_contributions,
+        };
+
+        println!("Storing old contribution.");
+        let serialized = serde_json::to_string(&old_contributions.encode())
+            .expect("Serialize prev_batch_contribution failed");
+        let mut file = std::fs::File::create("old_contributions.json").expect("Create file failed");
+        file.write_all(serialized.as_bytes())
+            .expect("Write prev_batch_contribution failed");
+
+        let taus = std::iter::repeat(Fr::random(OsRng))
+            .take(old_contributions.contributions.len())
+            .collect::<Vec<_>>();
+
+        let new_contributions = contribute(&old_contributions, &taus);
+
+        println!("Storing new contribution.");
+        let serialized = serde_json::to_string(&new_contributions.encode())
+            .expect("Serialize new_contributions failed");
+        let mut file = std::fs::File::create("new_contributions.json").expect("Create file failed");
+        file.write_all(serialized.as_bytes())
+            .expect("Write new_contributions failed");
+
+        let now = Instant::now();
+        prove(&old_contributions, &new_contributions, &taus);
+        let duration = now.elapsed();
+        println!("Prover took {}s", duration.as_secs());
+    }
+}
