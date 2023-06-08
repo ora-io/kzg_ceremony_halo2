@@ -231,7 +231,7 @@ pub fn verify() {
 #[cfg(test)]
 mod tests {
     use crate::client::contribute::contribute;
-    use crate::client::prover::prove;
+    use crate::client::prover::{prove, verify};
     use crate::client::request::Client;
     use crate::client::SEQUENCER;
     use crate::serialization::{BatchContribution, Contribution, Encode, PowersOfTau};
@@ -288,5 +288,11 @@ mod tests {
         prove(&old_contributions, &new_contributions, &taus);
         let duration = now.elapsed();
         println!("Prover took {}s", duration.as_secs());
+
+        println!("Verifying");
+        let now = Instant::now();
+        verify();
+        let duration = now.elapsed();
+        println!("Verifier took {}s", duration.as_secs());
     }
 }
