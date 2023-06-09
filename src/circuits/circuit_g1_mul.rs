@@ -394,9 +394,21 @@ fn test_circuit() {
     };
     assert_eq!(prover.verify(), Ok(()));
 
-    // let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
-    // let pk = ProvingKey::build(&params);
+    // println!("Reading G1 params...");
+    // let params = match std::fs::read("test_g1_params.bin") {
+    //     Ok(params) => Params::<bn256::G1Affine>::read(&params[..]).expect("Read G1 params failed"),
+    //     Err(_) => {
+    //         println!("Setup");
+    //         let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
+    //         let mut params_buffer = vec![];
+    //         params.write(&mut params_buffer).unwrap();
+    //         std::fs::write("test_g1_params.bin", &params_buffer).expect("Write params failed");
     //
+    //         params
+    //     }
+    // };
+    //
+    // let pk = ProvingKey::build(&params);
     // let proof = create_proofs(&params, circuit, &pk, &instance);
     // let vk = VerifyingKey::build(&params);
     // assert!(verify_proof(&params, &vk, &proof, &instance).is_ok());
