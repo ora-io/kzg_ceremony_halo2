@@ -110,6 +110,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
         .await;
     match receipt {
         Ok(r) => {
+            println!("Contribute OK.");
             println!("{}", r);
             let serialized = serde_json::to_string(&r).expect("Serialize receipt failed");
             let mut file = std::fs::File::create("receipt.json").expect("Create file failed");
