@@ -134,31 +134,50 @@ pub fn prove(
 }
 
 pub fn verify() {
-    println!("Verifying");
-
     let old_contributions_json =
         fs::read_to_string("old_contributions.json").expect("should exist");
+    let new_contributions_json =
+        fs::read_to_string("new_contributions.json").expect("should exist");
+
+    let proof_file = fs::read_to_string("Proof.json").expect("should exist");
+
+    let g1_params = fs::read("g1_params.bin").expect("Read G1 params file failed");
+    let g2_params = fs::read("g2_params.bin").expect("Read G2 params file failed");
+
+    verify_proofs(
+        old_contributions_json,
+        new_contributions_json,
+        proof_file,
+        g1_params,
+        g2_params,
+    );
+}
+
+pub fn verify_proofs(
+    old_contributions_json: String,
+    new_contributions_json: String,
+    proofs: String,
+    g1_params: Vec<u8>,
+    g2_params: Vec<u8>,
+) {
+    println!("Verifying");
+
     let old_contributions_json: BatchContributionJson =
         serde_json::from_str(&old_contributions_json).expect("Deserialize failed");
     let old_contributions = old_contributions_json.decode();
 
-    let new_contributions_json =
-        fs::read_to_string("new_contributions.json").expect("should exist");
     let new_contributions_json: BatchContributionJson =
         serde_json::from_str(&new_contributions_json).expect("Deserialize failed");
     let new_contributions = new_contributions_json.decode();
 
-    let proof_file = fs::read_to_string("Proof.json").expect("should exist");
-    let proofs: Proof = serde_json::from_str(&proof_file).expect("Deserialize proof failed");
+    let proofs: Proof = serde_json::from_str(&proofs).expect("Deserialize proof failed");
 
     println!("Reading G1 params...");
-    let g1_params = fs::read("g1_params.bin").expect("Read G1 params file failed");
     let g1_params = Params::<bn256::G1Affine>::read(&g1_params[..]).expect("Read G1 params failed");
     println!("Building G1 Verification Key..");
     let g1_vk = G1_VK::build(&g1_params);
 
     println!("Reading G2 params...");
-    let g2_params = fs::read("g2_params.bin").expect("Read G2 params file failed");
     let g2_params = Params::<bn256::G1Affine>::read(&g2_params[..]).expect("Read G2 params failed");
     println!("Building G2 Verification Key..");
     let g2_vk = G2_VK::build(&g2_params);
