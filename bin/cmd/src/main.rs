@@ -12,7 +12,7 @@ use client::contribute::contribute_ceremony;
 use client::status::status;
 use client::verify_transcript::verify_transcript;
 use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
-use kzg_ceremony_types::serialization;
+use kzg_ceremony_prover::serialization;
 
 #[derive(StructOpt)]
 #[structopt(name = "kzg ceremony", about = "KZG Ceremony Command Line Tool")]
@@ -37,9 +37,6 @@ enum Command {
     #[structopt(name = "verify_transcript")]
     VerifyTranscript,
 }
-
-#[derive(Serialize, Deserialize)]
-struct Proof(Vec<(Vec<Vec<u8>>, Vec<Vec<u8>>)>);
 
 fn main() {
     let opt = Command::from_args();

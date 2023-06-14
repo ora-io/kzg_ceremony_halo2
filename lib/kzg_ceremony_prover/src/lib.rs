@@ -1,27 +1,29 @@
+use crate::serialization::{BatchContribution, BatchContributionJson, Decode, Proof};
+use kzg_ceremony_circuit::circuit_g1_mul::{
+    verify_proof as g1_verify_proof, Circuit as G1_Circuit, Instance as G1_Instance,
+    ProvingKey as G1_PK, VerifyingKey as G1_VK, LENGTH as G1_LENGTH,
+};
+use kzg_ceremony_circuit::circuit_g2_mul::{
+    verify_proof as g2_verify_proof, Circuit as G2_Circuit, Instance as G2_Instance,
+    ProvingKey as G2_PK, VerifyingKey as G2_VK, LENGTH as G2_LENGTH,
+};
+use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::Fr as Scalar;
+use kzg_ceremony_circuit::halo2_proofs::pairing::bn256::Fr;
+use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
+use kzg_ceremony_circuit::halo2_proofs::pairing::{bls12_381, bn256};
+use kzg_ceremony_circuit::halo2_proofs::poly::commitment::Params;
+use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 
-use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
-use kzg_ceremony_circuit::halo2_proofs::poly::commitment::Params;
-
-use crate::circuit_g1_mul::{
-    self, verify_proof as g1_verify_proof, Circuit as G1_Circuit, Instance as G1_Instance,
-    ProvingKey as G1_PK, VerifyingKey as G1_VK, LENGTH as G1_LENGTH,
-};
-use crate::circuit_g2_mul::{
-    self, verify_proof as g2_verify_proof, Circuit as G2_Circuit, Instance as G2_Instance,
-    ProvingKey as G2_PK, VerifyingKey as G2_VK, LENGTH as G2_LENGTH,
-};
-use crate::{bls12_381, bn256, serialization, Curve, Fr, Proof};
-use bls12_381::Fr as Scalar;
-use serialization::{BatchContribution, BatchContributionJson, BatchTranscriptJson, Decode};
+pub mod serialization;
 
 pub fn prove(
     old_contributions: &BatchContribution,
     new_contributions: &BatchContribution,
     taus: &Vec<Scalar>,
-) {
+) -> Proof {
     println!("Proving");
 
     println!("Reading G1 params...");
@@ -126,32 +128,8 @@ pub fn prove(
 
         proofs.push((proofs_g1, proofs_g2));
     }
-    let serialized = serde_json::to_string(&Proof(proofs)).expect("Serialize proof failed");
-    let mut file = File::create("Proof.json").expect("Create file failed");
-    file.write_all(serialized.as_bytes())
-        .expect("Write proof failed");
-}
 
-pub fn verify() {
-    let old_contributions_json =
-        fs::read_to_string("old_contributions.json").expect("should exist");
-    let new_contributions_json =
-        fs::read_to_string("new_contributions.json").expect("should exist");
-
-    let proof_file = fs::read_to_string("Proof.json").expect("should exist");
-
-    let g1_params = fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
-        .expect("Read G1 params file failed");
-    let g2_params = fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
-        .expect("Read G2 params file failed");
-
-    verify_proofs(
-        old_contributions_json,
-        new_contributions_json,
-        proof_file,
-        g1_params,
-        g2_params,
-    );
+    Proof(proofs)
 }
 
 pub fn verify_proofs(
@@ -174,11 +152,15 @@ pub fn verify_proofs(
     let proofs: Proof = serde_json::from_str(&proofs).expect("Deserialize proof failed");
 
     println!("Reading G1 params...");
+    // let g1_params = fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
+    //     .expect("Read G1 params file failed");
     let g1_params = Params::<bn256::G1Affine>::read(&g1_params[..]).expect("Read G1 params failed");
     println!("Building G1 Verification Key..");
     let g1_vk = G1_VK::build(&g1_params);
 
     println!("Reading G2 params...");
+    // let g2_params = fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
+    //     .expect("Read G2 params file failed");
     let g2_params = Params::<bn256::G1Affine>::read(&g2_params[..]).expect("Read G2 params failed");
     println!("Building G2 Verification Key..");
     let g2_vk = G2_VK::build(&g2_params);
@@ -245,74 +227,5 @@ pub fn verify_proofs(
 
             g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).unwrap();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::client::contribute::contribute;
-    use crate::client::prover::{prove, verify};
-    use crate::client::request::Client;
-    use crate::client::SEQUENCER;
-    use crate::serialization::{BatchContribution, Contribution, Encode, PowersOfTau};
-    use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
-    use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::Fr;
-    use rand::rngs::OsRng;
-    use std::io::Write;
-    use std::time::Instant;
-
-    #[tokio::test]
-    async fn pull_and_test() {
-        let client = Client::new(SEQUENCER.to_string());
-        println!("Pull previous transcripts");
-        let cur_state = client.get_current_state().await.unwrap();
-        println!("End");
-        let old_contributions = cur_state
-            .transcripts
-            .iter()
-            .map(|t| Contribution {
-                num_g1_powers: t.num_g1_powers,
-                num_g2_powers: t.num_g2_powers,
-                powers_of_tau: PowersOfTau {
-                    g1_powers: t.powers_of_tau.g1_powers.clone(),
-                    g2_powers: t.powers_of_tau.g2_powers.clone(),
-                },
-                pot_pubkey: Default::default(),
-            })
-            .collect::<Vec<_>>();
-        let old_contributions = BatchContribution {
-            contributions: old_contributions,
-        };
-
-        println!("Storing old contribution.");
-        let serialized = serde_json::to_string(&old_contributions.encode())
-            .expect("Serialize prev_batch_contribution failed");
-        let mut file = std::fs::File::create("old_contributions.json").expect("Create file failed");
-        file.write_all(serialized.as_bytes())
-            .expect("Write prev_batch_contribution failed");
-
-        let taus = std::iter::repeat(Fr::random(OsRng))
-            .take(old_contributions.contributions.len())
-            .collect::<Vec<_>>();
-
-        let new_contributions = contribute(&old_contributions, &taus);
-
-        println!("Storing new contribution.");
-        let serialized = serde_json::to_string(&new_contributions.encode())
-            .expect("Serialize new_contributions failed");
-        let mut file = std::fs::File::create("new_contributions.json").expect("Create file failed");
-        file.write_all(serialized.as_bytes())
-            .expect("Write new_contributions failed");
-
-        let now = Instant::now();
-        prove(&old_contributions, &new_contributions, &taus);
-        let duration = now.elapsed();
-        println!("Prover took {}s", duration.as_secs());
-
-        println!("Verifying");
-        let now = Instant::now();
-        verify();
-        let duration = now.elapsed();
-        println!("Verifier took {}s", duration.as_secs());
     }
 }

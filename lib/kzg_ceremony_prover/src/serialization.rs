@@ -341,3 +341,6 @@ fn test_encode() {
     let h = format!("0x{}", hex::encode(bytes));
     println!("{}", h);
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct Proof(pub Vec<(Vec<Vec<u8>>, Vec<Vec<u8>>)>);
