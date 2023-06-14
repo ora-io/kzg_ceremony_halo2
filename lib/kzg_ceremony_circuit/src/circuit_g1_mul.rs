@@ -7,10 +7,10 @@ use ark_std::{end_timer, start_timer};
 use num_bigint::BigUint;
 use rand::rngs::OsRng;
 
-use halo2_proofs::arithmetic::{Field, FieldExt};
+use halo2_proofs::arithmetic::{CurveAffine, Field, FieldExt};
 use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
 use halo2_proofs::pairing::bls12_381;
-use halo2_proofs::pairing::bn256::{self, Bn256, Fr, G1Affine};
+use halo2_proofs::pairing::bn256::{self, Bn256, Fr};
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::{self, ConstraintSystem, Error, SingleVerifier};
 use halo2_proofs::poly::commitment::{Params, ParamsVerifier};
@@ -21,13 +21,13 @@ use crate::circuit_utils::ecc_chip::{EccChipBaseOps, EccChipScalarOps};
 use crate::circuit_utils::fq2::Fq2ChipOps;
 use crate::circuit_utils::integer_chip::IntegerChipOps;
 use crate::circuit_utils::range_chip::{RangeChip, RangeChipConfig, RangeChipOps};
-use crate::circuits::context::{Context, GeneralScalarEccContext};
-use crate::circuits::utils::{bn_to_field, field_to_bn, split_g2_point};
+use crate::context::{Context, GeneralScalarEccContext};
+use crate::utils::{bn_to_field, field_to_bn, split_g1_point, split_g2_point};
 
-pub const LENGTH: usize = 8;
+pub const LENGTH: usize = 32;
 #[allow(dead_code)]
 const K: u32 = 23;
-const INSTANCE_NUM: usize = 1 + 16 + 8 * 2 * 2 * LENGTH;
+const INSTANCE_NUM: usize = 1 + 16 + 8 * 2 * LENGTH;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -40,9 +40,9 @@ pub struct Circuit<N: FieldExt> {
     pub from_index: Option<usize>,
     pub tau: Option<bls12_381::Fr>,
     pub pubkey: Option<bls12_381::G2Affine>,
-    pub points: Vec<Option<bls12_381::G2Affine>>,
-    pub new_points: Vec<Option<bls12_381::G2Affine>>,
-    pub(crate) _mark: PhantomData<N>,
+    pub points: Vec<Option<bls12_381::G1Affine>>,
+    pub new_points: Vec<Option<bls12_381::G1Affine>>,
+    pub _mark: PhantomData<N>,
 }
 
 impl<N: FieldExt> Default for Circuit<N> {
@@ -92,14 +92,12 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
             .assign_small_number(self.from_index.unwrap_or_default(), 16);
         instances.push(from_index.clone());
 
-        // load pubkey
-        let pubkey = self.pubkey.unwrap_or(bls12_381::G2Affine::generator());
+        //load pubkey
         let four = bls12_381::Fq::one().double().double();
         let b = ctx.fq2_assign_constant((four, four));
-        let pubkey = ctx.assign_non_identity_g2(
-            &((pubkey.x.c0, pubkey.x.c1), (pubkey.y.c0, pubkey.y.c1)),
-            b.clone(),
-        );
+        let pubkey = self.pubkey.unwrap_or(bls12_381::G2Affine::generator());
+        let pubkey = ctx
+            .assign_non_identity_g2(&((pubkey.x.c0, pubkey.x.c1), (pubkey.y.c0, pubkey.y.c1)), b);
 
         instances.extend_from_slice(&pubkey.x.0.limbs_le);
         instances.extend_from_slice(&pubkey.x.1.limbs_le);
@@ -124,29 +122,22 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
             .points
             .iter()
             .map(|x| {
-                let x = x.unwrap_or(bls12_381::G2Affine::generator());
-                let p =
-                    ctx.assign_non_identity_g2(&((x.x.c0, x.x.c1), (x.y.c0, x.y.c1)), b.clone());
-                instances.extend_from_slice(&p.x.0.limbs_le);
-                instances.extend_from_slice(&p.x.1.limbs_le);
-                instances.extend_from_slice(&p.y.0.limbs_le);
-                instances.extend_from_slice(&p.y.1.limbs_le);
+                let x = x.unwrap_or(bls12_381::G1Affine::generator());
+                let p = ctx.assign_non_zero_point(&x);
+                instances.extend_from_slice(&p.x.limbs_le);
+                instances.extend_from_slice(&p.y.limbs_le);
 
                 p
             })
             .collect::<Vec<_>>();
-
         let new_points = self
             .new_points
             .iter()
             .map(|x| {
-                let x = x.unwrap_or(bls12_381::G2Affine::generator());
-                let p =
-                    ctx.assign_non_identity_g2(&((x.x.c0, x.x.c1), (x.y.c0, x.y.c1)), b.clone());
-                instances.extend_from_slice(&p.x.0.limbs_le);
-                instances.extend_from_slice(&p.x.1.limbs_le);
-                instances.extend_from_slice(&p.y.0.limbs_le);
-                instances.extend_from_slice(&p.y.1.limbs_le);
+                let x = x.unwrap_or(bls12_381::G1Affine::generator());
+                let p = ctx.assign_non_zero_point(&x);
+                instances.extend_from_slice(&p.x.limbs_le);
+                instances.extend_from_slice(&p.y.limbs_le);
 
                 p
             })
@@ -210,8 +201,8 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
             .iter()
             .zip(new_points.iter().zip(scalars.into_iter()))
         {
-            let p = ctx.ecc_g2_mul(point, &scalar);
-            ctx.ecc_assert_g2_equal(&p, &new_point);
+            let p = ctx.ecc_mul(point, scalar);
+            ctx.ecc_assert_equal(&p, &new_point);
         }
         assert_eq!(instances.len(), INSTANCE_NUM);
 
@@ -253,12 +244,12 @@ impl<N: FieldExt> plonk::Circuit<N> for Circuit<N> {
 /// The verifying key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct VerifyingKey {
-    pub vk: plonk::VerifyingKey<G1Affine>,
+    pub vk: plonk::VerifyingKey<bn256::G1Affine>,
 }
 
 impl VerifyingKey {
     /// Builds the verifying key.
-    pub fn build(params: &Params<G1Affine>) -> Self {
+    pub fn build(params: &Params<bn256::G1Affine>) -> Self {
         let circuit: Circuit<Fr> = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -269,12 +260,12 @@ impl VerifyingKey {
 
 #[derive(Debug)]
 pub struct ProvingKey {
-    pk: plonk::ProvingKey<G1Affine>,
+    pk: plonk::ProvingKey<bn256::G1Affine>,
 }
 
 impl ProvingKey {
     /// Builds the proving key.
-    pub fn build(params: &Params<G1Affine>) -> Self {
+    pub fn build(params: &Params<bn256::G1Affine>) -> Self {
         let circuit: Circuit<Fr> = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -286,22 +277,21 @@ impl ProvingKey {
 
 #[derive(Clone, Debug)]
 pub struct Instance {
-    pub(crate) from_index: usize,
-    pub(crate) pubkey: bls12_381::G2Affine,
-    pub(crate) old_points: Vec<bls12_381::G2Affine>,
-    pub(crate) new_points: Vec<bls12_381::G2Affine>,
+    pub from_index: usize,
+    pub pubkey: bls12_381::G2Affine,
+    pub old_points: Vec<bls12_381::G1Affine>,
+    pub new_points: Vec<bls12_381::G1Affine>,
 }
 
-pub(crate) fn generate_instance(instance: &Instance) -> Vec<Fr> {
+pub fn generate_instance(instance: &Instance) -> Vec<Fr> {
     let mut halo2_instances = vec![bn_to_field::<Fr>(&BigUint::from(instance.from_index))];
 
     halo2_instances.extend_from_slice(&split_g2_point(&instance.pubkey));
-
     let _ = instance
         .old_points
         .iter()
         .chain(instance.new_points.iter())
-        .map(|p| halo2_instances.extend_from_slice(&split_g2_point(&p)))
+        .map(|p| halo2_instances.extend_from_slice(&split_g1_point(&p)))
         .collect::<Vec<_>>();
 
     assert_eq!(halo2_instances.len(), INSTANCE_NUM);
@@ -310,7 +300,7 @@ pub(crate) fn generate_instance(instance: &Instance) -> Vec<Fr> {
 }
 
 pub fn create_proofs(
-    params: &Params<G1Affine>,
+    params: &Params<bn256::G1Affine>,
     circuit: Circuit<Fr>,
     pk: &ProvingKey,
     instance: &Vec<Fr>,
@@ -333,7 +323,7 @@ pub fn create_proofs(
 }
 
 pub fn verify_proof(
-    params: &Params<G1Affine>,
+    params: &Params<bn256::G1Affine>,
     vk: &VerifyingKey,
     proof: &Vec<u8>,
     instance: &Vec<Fr>,
@@ -358,17 +348,17 @@ pub fn verify_proof(
 
 #[test]
 fn test_circuit() {
-    // use halo2_proofs::pairing::group::ff::PrimeField;
+    use halo2_proofs::pairing::group::ff::PrimeField;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
     let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
     let tau = bls12_381::Fr::random(&mut rng);
-    let from_index = 1;
+    let from_index = 0;
     let old_points = (0..LENGTH)
         .map(|_| {
             let s = bls12_381::Fr::random(&mut rng);
-            let p = bls12_381::G2Affine::generator() * s;
+            let p = bls12_381::G1Affine::generator() * s;
 
             p.to_affine()
         })
@@ -398,23 +388,34 @@ fn test_circuit() {
     });
 
     use halo2_proofs::dev::MockProver;
-    let prover = match MockProver::run(K, &circuit, vec![instance]) {
+    let prover = match MockProver::run(K, &circuit, vec![instance.clone()]) {
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };
     assert_eq!(prover.verify(), Ok(()));
 
-    // println!("Test creating proof...");
-    // let params = Params::<G1Affine>::unsafe_setup::<Bn256>(K);
+    // println!("Reading G1 params...");
+    // let params = match std::fs::read("test_g1_params.bin") {
+    //     Ok(params) => Params::<bn256::G1Affine>::read(&params[..]).expect("Read G1 params failed"),
+    //     Err(_) => {
+    //         println!("Setup");
+    //         let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
+    //         let mut params_buffer = vec![];
+    //         params.write(&mut params_buffer).unwrap();
+    //         std::fs::write("test_g1_params.bin", &params_buffer).expect("Write params failed");
+    //
+    //         params
+    //     }
+    // };
+    //
     // let pk = ProvingKey::build(&params);
     // let proof = create_proofs(&params, circuit, &pk, &instance);
-    //
     // let vk = VerifyingKey::build(&params);
-    // verify_proof(&params, &vk, &proof, &instance).unwrap();
+    // assert!(verify_proof(&params, &vk, &proof, &instance).is_ok());
     //
     // let mut instance = instance;
-    // instance[0] = Fr::from_str_vartime("2").unwrap();
-    // verify_proof(&params, &vk, &proof, &instance).unwrap_err();
+    // instance[0] = Fr::from_str_vartime("1").unwrap();
+    // assert!(verify_proof(&params, &vk, &proof, &instance).is_err());
 }
 
 #[test]
@@ -423,5 +424,5 @@ fn test_write_params() {
 
     let mut params_buffer = vec![];
     params.write(&mut params_buffer).unwrap();
-    std::fs::write("g2_params.bin", &params_buffer).expect("Write params failed");
+    std::fs::write("g1_params.bin", &params_buffer).expect("Write params failed");
 }

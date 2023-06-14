@@ -135,7 +135,7 @@ impl<'a, N: FieldExt> ValueSchema<'a, N> {
 #[macro_export]
 macro_rules! pair {
     ($x: expr, $y: expr) => {
-        (crate::circuits::assign::ValueSchema::from($x), ($y))
+        (crate::assign::ValueSchema::from($x), ($y))
     };
 }
 

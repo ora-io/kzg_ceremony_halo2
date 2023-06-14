@@ -2,12 +2,12 @@
   The implementation is ported from https://github.com/DelphinusLab/halo2ecc-s
 */
 
+use crate::assign::{AssignedValue, Cell, Chip, ValueSchema};
 use crate::circuit_utils::{
     base_chip::{BaseChip, FIXED_COLUMNS, MUL_COLUMNS, VAR_COLUMNS},
     range_chip::{RangeChip, COMMON_RANGE_BITS, MAX_CHUNKS},
 };
-use crate::circuits::assign::{AssignedValue, Cell, Chip, ValueSchema};
-use crate::circuits::range_info::RangeInfo;
+use crate::range_info::RangeInfo;
 use halo2_proofs::{
     arithmetic::{BaseExt, CurveAffine, FieldExt},
     circuit::{AssignedCell, Region},

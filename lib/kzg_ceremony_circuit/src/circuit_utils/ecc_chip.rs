@@ -5,12 +5,12 @@
 use halo2_proofs::arithmetic::{BaseExt, CurveAffine, Field, FieldExt};
 
 use super::integer_chip::IntegerChipOps;
-use crate::circuit_utils::fq2::Fq2ChipOps;
-use crate::circuits::assign::{
+use crate::assign::{
     AssignedCondition, AssignedCurvature, AssignedExtCurvature, AssignedFq2, AssignedG2Affine,
     AssignedG2WithCurvature, AssignedPoint, AssignedPointWithCurvature,
 };
-use crate::circuits::utils::field_to_bn;
+use crate::circuit_utils::fq2::Fq2ChipOps;
+use crate::utils::field_to_bn;
 
 pub trait EccChipScalarOps<C: CurveAffine, N: FieldExt>: EccChipBaseOps<C, N> {
     type AssignedScalar: Clone;

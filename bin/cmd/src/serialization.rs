@@ -1,5 +1,5 @@
-use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
-use halo2_proofs::pairing::group::Curve;
+use kzg_ceremony_circuit::halo2_proofs::pairing::group::prime::PrimeCurveAffine;
+use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
 use serde::{Deserialize, Serialize};
 
 use crate::bls12_381::{Fr, G1Affine, G2Affine};

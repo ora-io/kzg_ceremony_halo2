@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 
 use crate::circuit_utils::range_chip::COMMON_RANGE_BITS;
 use crate::circuit_utils::range_chip::MAX_CHUNKS;
-use crate::circuits::utils::{bn_to_field, field_to_bn};
+use crate::utils::{bn_to_field, field_to_bn};
 
 #[derive(Debug, Clone)]
 pub struct RangeInfo<W: BaseExt, N: FieldExt> {

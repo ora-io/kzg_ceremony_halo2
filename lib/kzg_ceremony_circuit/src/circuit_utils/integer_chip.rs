@@ -9,10 +9,10 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 
 use super::{base_chip::BaseChipOps, range_chip::RangeChipOps};
-use crate::circuits::assign::{AssignedCondition, AssignedInteger, AssignedValue};
-use crate::circuits::context::IntegerContext;
-use crate::circuits::utils::{bn_to_field, field_to_bn};
+use crate::assign::{AssignedCondition, AssignedInteger, AssignedValue};
+use crate::context::IntegerContext;
 use crate::pair;
+use crate::utils::{bn_to_field, field_to_bn};
 
 pub trait IntegerChipOps<W: BaseExt, N: FieldExt> {
     fn base_chip(&mut self) -> RefMut<'_, dyn BaseChipOps<N>>;

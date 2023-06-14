@@ -5,13 +5,13 @@ use super::base_chip::BaseChipOps;
 use super::ecc_chip::EccBaseIntegerChipWrapper;
 use super::ecc_chip::EccChipScalarOps;
 use super::integer_chip::IntegerChipOps;
+use crate::assign::AssignedCondition;
+use crate::assign::AssignedInteger;
 use crate::circuit_utils::ecc_chip::EccChipBaseOps;
 use crate::circuit_utils::fq2::Fq2ChipOps;
-use crate::circuits::assign::AssignedCondition;
-use crate::circuits::assign::AssignedInteger;
-use crate::circuits::context::GeneralScalarEccContext;
-use crate::circuits::utils::field_to_bn;
+use crate::context::GeneralScalarEccContext;
 use crate::pair;
+use crate::utils::field_to_bn;
 
 impl<C: CurveAffine, N: FieldExt> EccBaseIntegerChipWrapper<C::Base, N>
     for GeneralScalarEccContext<C, N>

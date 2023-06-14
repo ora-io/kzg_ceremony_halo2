@@ -1,24 +1,21 @@
-use halo2_proofs::arithmetic::Field;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 
-use halo2_proofs::poly::commitment::Params;
+use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
+use kzg_ceremony_circuit::halo2_proofs::poly::commitment::Params;
 
 use crate::circuit_g1_mul::{
-    verify_proof as g1_verify_proof, Circuit as G1_Circuit, Instance as G1_Instance,
+    self, verify_proof as g1_verify_proof, Circuit as G1_Circuit, Instance as G1_Instance,
     ProvingKey as G1_PK, VerifyingKey as G1_VK, LENGTH as G1_LENGTH,
 };
 use crate::circuit_g2_mul::{
-    verify_proof as g2_verify_proof, Circuit as G2_Circuit, Instance as G2_Instance,
+    self, verify_proof as g2_verify_proof, Circuit as G2_Circuit, Instance as G2_Instance,
     ProvingKey as G2_PK, VerifyingKey as G2_VK, LENGTH as G2_LENGTH,
 };
-use crate::serialization::{BatchContribution, BatchContributionJson, Decode};
-use crate::{
-    bls12_381, bn256, circuit_g1_mul, circuit_g2_mul, serialization, BatchTranscriptJson, Curve,
-    Fr, Proof,
-};
+use crate::{bls12_381, bn256, serialization, BatchTranscriptJson, Curve, Fr, Proof};
 use bls12_381::Fr as Scalar;
+use serialization::{BatchContribution, BatchContributionJson, Decode};
 
 pub fn prove(
     old_contributions: &BatchContribution,
@@ -28,13 +25,15 @@ pub fn prove(
     println!("Proving");
 
     println!("Reading G1 params...");
-    let g1_params = fs::read("g1_params.bin").expect("Read G1 params file failed");
+    let g1_params = fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
+        .expect("Read G1 params file failed");
     let g1_params = Params::<bn256::G1Affine>::read(&g1_params[..]).expect("Read G1 params failed");
     println!("Building G1 Proving Key..");
     let g1_pk = G1_PK::build(&g1_params);
 
     println!("Reading G2 params...");
-    let g2_params = fs::read("g2_params.bin").expect("Read G2 params file failed");
+    let g2_params = fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
+        .expect("Read G2 params file failed");
     let g2_params = Params::<bn256::G1Affine>::read(&g2_params[..]).expect("Read G2 params failed");
     println!("Building G2 Proving Key..");
     let g2_pk = G2_PK::build(&g2_params);
@@ -141,8 +140,10 @@ pub fn verify() {
 
     let proof_file = fs::read_to_string("Proof.json").expect("should exist");
 
-    let g1_params = fs::read("g1_params.bin").expect("Read G1 params file failed");
-    let g2_params = fs::read("g2_params.bin").expect("Read G2 params file failed");
+    let g1_params = fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
+        .expect("Read G1 params file failed");
+    let g2_params = fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
+        .expect("Read G2 params file failed");
 
     verify_proofs(
         old_contributions_json,
@@ -254,8 +255,8 @@ mod tests {
     use crate::client::request::Client;
     use crate::client::SEQUENCER;
     use crate::serialization::{BatchContribution, Contribution, Encode, PowersOfTau};
-    use halo2_proofs::arithmetic::Field;
-    use halo2_proofs::pairing::bls12_381::Fr;
+    use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
+    use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::Fr;
     use rand::rngs::OsRng;
     use std::io::Write;
     use std::time::Instant;

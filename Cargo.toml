@@ -1,31 +1,5 @@
-[package]
-name = "kzg_ceremony_halo2"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-halo2_proofs = { git = "https://github.com/junyu0312/halo2.git", branch = "gpu", default-features = true }
-num-integer = "0.1"
-num-bigint = { version = "0.4", features = ["rand"] }
-rayon = "1.5.2"
-rand = "0.8"
-rand_xorshift = "0.3"
-ark-std = { version = "0.3", features = ["print-trace"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.0"
-reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
-structopt = "0.3.26"
-hex = "0.4.3"
-chrono = "0.4.24"
-blake2 = "0.10.6"
-
-[dev-dependencies]
-chrono = "0.4.19"
-
-[features]
-default = []
-cuda = ["halo2_proofs/cuda"]
+[workspace]
+members = [
+    "lib/kzg_ceremony_circuit",
+    "bin/cmd"
+]

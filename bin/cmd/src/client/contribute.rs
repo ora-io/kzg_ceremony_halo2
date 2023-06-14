@@ -4,7 +4,7 @@ use std::error::Error;
 use std::io::Write;
 use std::ops::{Mul, MulAssign};
 
-use halo2_proofs::arithmetic::Field;
+use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
 
 use crate::bls12_381::{Fr, G2Affine};
 use crate::client::message::{MsgContributeReceipt, MsgStatus};

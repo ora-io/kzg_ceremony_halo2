@@ -2,10 +2,10 @@
   The implementation is ported mainly from https://github.com/DelphinusLab/halo2ecc-s
 */
 
-use crate::circuits::assign::AssignedValue;
-use crate::circuits::context::IntegerContext;
-use crate::circuits::range_info::*;
-use crate::circuits::utils::bn_to_field;
+use crate::assign::AssignedValue;
+use crate::context::IntegerContext;
+use crate::range_info::*;
+use crate::utils::bn_to_field;
 use halo2_proofs::{
     arithmetic::{BaseExt, FieldExt},
     circuit::Layouter,

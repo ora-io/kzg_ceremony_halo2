@@ -10,8 +10,8 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
-use crate::circuits::assign::{AssignedCondition, AssignedValue, Chip, ValueSchema};
-use crate::circuits::context::Context;
+use crate::assign::{AssignedCondition, AssignedValue, Chip, ValueSchema};
+use crate::context::Context;
 use crate::pair;
 
 pub const VAR_COLUMNS: usize = 5;

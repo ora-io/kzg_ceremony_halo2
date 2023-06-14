@@ -1,21 +1,19 @@
-mod circuit_utils;
-mod circuits;
-mod client;
 #[macro_use]
 mod serialization;
+mod client;
 
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
-use halo2_proofs::pairing::bn256::Fr;
-use halo2_proofs::pairing::group::Curve;
-use halo2_proofs::pairing::{bls12_381, bn256};
+use kzg_ceremony_circuit::halo2_proofs::pairing::bn256::Fr;
+use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
+use kzg_ceremony_circuit::halo2_proofs::pairing::{bls12_381, bn256};
 
-use crate::client::contribute::contribute_ceremony;
-use crate::client::status::status;
-use crate::client::verify_transcript::verify_transcript;
-use crate::serialization::BatchTranscriptJson;
-use circuits::{circuit_g1_mul, circuit_g2_mul};
+use client::contribute::contribute_ceremony;
+use client::status::status;
+use client::verify_transcript::verify_transcript;
+use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
+use serialization::BatchTranscriptJson;
 // use client::prover;
 
 #[derive(StructOpt)]
