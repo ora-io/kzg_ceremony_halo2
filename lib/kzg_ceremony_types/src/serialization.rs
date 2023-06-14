@@ -2,7 +2,7 @@ use kzg_ceremony_circuit::halo2_proofs::pairing::group::prime::PrimeCurveAffine;
 use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
 use serde::{Deserialize, Serialize};
 
-use crate::bls12_381::{Fr, G1Affine, G2Affine};
+use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::{Fr, G1Affine, G2Affine};
 
 // TODO: multi-threads
 macro_rules! encode_points {
@@ -289,7 +289,7 @@ impl Decode for BatchContributionJson {
 }
 
 pub struct BatchContribution {
-    pub(crate) contributions: Vec<Contribution>,
+    pub contributions: Vec<Contribution>,
 }
 
 impl Encode for BatchContribution {

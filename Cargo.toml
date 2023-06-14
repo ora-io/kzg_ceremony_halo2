@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "lib/kzg_ceremony_circuit",
+    "lib/kzg_ceremony_types",
     "bin/cmd"
 ]

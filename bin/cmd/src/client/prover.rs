@@ -13,9 +13,9 @@ use crate::circuit_g2_mul::{
     self, verify_proof as g2_verify_proof, Circuit as G2_Circuit, Instance as G2_Instance,
     ProvingKey as G2_PK, VerifyingKey as G2_VK, LENGTH as G2_LENGTH,
 };
-use crate::{bls12_381, bn256, serialization, BatchTranscriptJson, Curve, Fr, Proof};
+use crate::{bls12_381, bn256, serialization, Curve, Fr, Proof};
 use bls12_381::Fr as Scalar;
-use serialization::{BatchContribution, BatchContributionJson, Decode};
+use serialization::{BatchContribution, BatchContributionJson, BatchTranscriptJson, Decode};
 
 pub fn prove(
     old_contributions: &BatchContribution,

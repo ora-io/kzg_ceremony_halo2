@@ -1,0 +1,11 @@
+[package]
+name = "kzg_ceremony_types"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+hex = "0.4.3"
+kzg_ceremony_circuit = {path = "../kzg_ceremony_circuit"}

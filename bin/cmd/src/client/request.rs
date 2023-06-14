@@ -8,8 +8,9 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::StatusCode;
 
 use crate::client::message::{MsgContributeReceipt, MsgStatus};
-use crate::serialization::{BatchContribution, BatchContributionJson, BatchTranscript, Decode};
-use crate::BatchTranscriptJson;
+use crate::serialization::{
+    BatchContribution, BatchContributionJson, BatchTranscript, BatchTranscriptJson, Decode,
+};
 
 pub struct Client {
     url: String,

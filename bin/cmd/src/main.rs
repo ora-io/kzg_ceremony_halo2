@@ -1,5 +1,4 @@
 #[macro_use]
-mod serialization;
 mod client;
 
 use serde::{Deserialize, Serialize};
@@ -13,8 +12,7 @@ use client::contribute::contribute_ceremony;
 use client::status::status;
 use client::verify_transcript::verify_transcript;
 use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
-use serialization::BatchTranscriptJson;
-// use client::prover;
+use kzg_ceremony_types::serialization;
 
 #[derive(StructOpt)]
 #[structopt(name = "kzg ceremony", about = "KZG Ceremony Command Line Tool")]
