@@ -1,4 +1,4 @@
-use crate::serialization::{BatchContribution, BatchContributionJson, Decode, Proof};
+use crate::serialization::{BatchContribution, Proof};
 use kzg_ceremony_circuit::circuit_g1_mul::{
     verify_proof as g1_verify_proof, Circuit as G1_Circuit, Instance as G1_Instance,
     ProvingKey as G1_PK, VerifyingKey as G1_VK, LENGTH as G1_LENGTH,
@@ -14,8 +14,6 @@ use kzg_ceremony_circuit::halo2_proofs::pairing::{bls12_381, bn256};
 use kzg_ceremony_circuit::halo2_proofs::poly::commitment::Params;
 use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
 use std::fs;
-use std::fs::File;
-use std::io::Write;
 
 pub mod serialization;
 
@@ -133,21 +131,21 @@ pub fn prove(
 }
 
 pub fn verify_proofs(
-    old_contributions_json: String,
-    new_contributions_json: String,
+    old_contributions: &BatchContribution,
+    new_contributions: &BatchContribution,
     proofs: String,
     g1_params: Vec<u8>,
     g2_params: Vec<u8>,
 ) {
     println!("Verifying");
 
-    let old_contributions_json: BatchContributionJson =
-        serde_json::from_str(&old_contributions_json).expect("Deserialize failed");
-    let old_contributions = old_contributions_json.decode();
+    // let old_contributions_json: BatchContributionJson =
+    //     serde_json::from_str(&old_contributions_json).expect("Deserialize failed");
+    // let old_contributions = old_contributions_json.decode();
 
-    let new_contributions_json: BatchContributionJson =
-        serde_json::from_str(&new_contributions_json).expect("Deserialize failed");
-    let new_contributions = new_contributions_json.decode();
+    // let new_contributions_json: BatchContributionJson =
+    //     serde_json::from_str(&new_contributions_json).expect("Deserialize failed");
+    // let new_contributions = new_contributions_json.decode();
 
     let proofs: Proof = serde_json::from_str(&proofs).expect("Deserialize proof failed");
 

@@ -2,7 +2,6 @@ use crate::client::request::Client;
 use crate::client::SEQUENCER;
 
 use crate::bls12_381::{pairing, G1Affine, G2Affine};
-use kzg_ceremony_circuit::halo2_proofs::arithmetic::parallelize;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 #[tokio::main]

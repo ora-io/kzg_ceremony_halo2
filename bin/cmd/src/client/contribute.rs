@@ -1,19 +1,25 @@
 use blake2::Digest;
 use rand::rngs::OsRng;
-use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::ops::{Mul, MulAssign};
 
 use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
 use kzg_ceremony_prover::prove;
+use kzg_ceremony_prover::serialization::BatchContributionJson;
 
 use crate::bls12_381::{Fr, G2Affine};
-use crate::client::message::{MsgContributeReceipt, MsgStatus};
-use crate::client::request::{Client, CustomError, Status};
+use crate::client::request::{Client, Status};
 use crate::client::{MIN_RANDOMNESS_LEN, SEQUENCER};
 use crate::serialization::{BatchContribution, Contribution, Decode, Encode, PowersOfTau};
 use crate::Curve;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct BatchContributionWithProof {
+    contributions: BatchContributionJson,
+    proofs: String,
+}
 
 #[tokio::main]
 pub async fn contribute_ceremony(session_id: String, randomness: String) {
@@ -34,7 +40,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     }
 
     // Get previous contribution
-    let prev_batch_contribution;
+    let prev_batch_contribution_json;
     loop {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         println!("{} sending try_contribute", now);
@@ -48,7 +54,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
                     return;
                 }
                 if bc.1 == Status::StatusProceed {
-                    prev_batch_contribution = bc.0.unwrap();
+                    prev_batch_contribution_json = bc.0.unwrap();
                     break;
                 }
             }
@@ -71,14 +77,14 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     }
 
     println!("Storing Previous contribution.");
-    let old_contributions_json = serde_json::to_string(&prev_batch_contribution)
+    let old_contributions_json = serde_json::to_string(&prev_batch_contribution_json)
         .expect("Serialize prev_batch_contribution failed");
     let mut file = fs::File::create("old_contributions.json").expect("Create file failed");
     file.write_all(old_contributions_json.as_bytes())
         .expect("Write prev_batch_contribution failed");
 
     let now = std::time::Instant::now();
-    let prev_batch_contribution = prev_batch_contribution.decode();
+    let prev_batch_contribution = prev_batch_contribution_json.decode();
     let duration = now.elapsed();
     println!("Deserialization took {}s", duration.as_secs());
 
@@ -113,17 +119,20 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     let g2_params = std::fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
         .expect("Read G2 params file failed");
     kzg_ceremony_prover::verify_proofs(
-        old_contributions_json,
-        new_contributions_json,
+        &prev_batch_contribution,
+        &new_batch_contribution,
         serialized_proof,
         g1_params,
         g2_params,
     );
 
     println!("Sending contribution.");
-    let receipt = client
-        .post_contribute(&session_id, &new_batch_contribution_json)
-        .await;
+    let bc_with_proofs = BatchContributionWithProof {
+        contributions: new_batch_contribution_json,
+        proofs: "Proof bytes".to_string(),
+    };
+    let bc_with_proofs = serde_json::to_string(&bc_with_proofs).expect("Serialize failed");
+    let receipt = client.post_contribute(&session_id, &bc_with_proofs).await;
     match receipt {
         Ok(r) => {
             println!("Contribute OK.");
@@ -133,7 +142,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
             file.write_all(serialized.as_bytes())
                 .expect("Write receipt failed");
         }
-        Err(e) => {
+        Err(_) => {
             println!("Send contribution failed.");
         }
     }
@@ -274,8 +283,8 @@ mod tests {
             .expect("Read G2 params file failed");
         let now = Instant::now();
         verify_proofs(
-            serialized_old,
-            serialized_new,
+            &old_contributions,
+            &new_contributions,
             serialized_proof,
             g1_params,
             g2_params,

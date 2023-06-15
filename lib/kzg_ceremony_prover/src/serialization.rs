@@ -20,8 +20,7 @@ macro_rules! decode_points {
             .iter()
             .map(|p: &String| {
                 let bytes = hex::decode(&p[2..]).expect("Failed to decode point in hex string");
-                <$t>::from_compressed(&bytes.try_into().expect("Error length"))
-                    .expect("Deserialize failed")
+                <$t>::from_compressed(&bytes.try_into().expect("Error length")).unwrap()
             })
             .collect::<Vec<_>>()
     };
@@ -126,7 +125,7 @@ impl Decode for WitnessJson {
                 } else {
                     let bytes = hex::decode(&s[2..]).expect("Failed to decode point in hex string");
                     let p = G1Affine::from_compressed(&bytes.try_into().expect("Error length"))
-                        .expect("Deserialize G1 failed");
+                        .unwrap();
 
                     Some(p)
                 }
@@ -320,7 +319,7 @@ pub fn scalar_from_string(tau: &String) -> Fr {
     bytes.reverse();
     bytes.resize(32, 0);
 
-    Fr::from_bytes(&bytes.try_into().expect("Error length")).expect("Invalid tau")
+    Fr::from_bytes(&bytes.try_into().expect("Error length")).unwrap()
 }
 
 #[test]

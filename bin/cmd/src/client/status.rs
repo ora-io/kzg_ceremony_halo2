@@ -1,7 +1,5 @@
-use crate::client::message::MsgStatus;
 use crate::client::request::Client;
 use crate::client::SEQUENCER;
-use std::error::Error;
 
 #[tokio::main]
 pub async fn status() {

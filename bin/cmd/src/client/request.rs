@@ -8,9 +8,7 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::StatusCode;
 
 use crate::client::message::{MsgContributeReceipt, MsgStatus};
-use crate::serialization::{
-    BatchContribution, BatchContributionJson, BatchTranscript, BatchTranscriptJson, Decode,
-};
+use crate::serialization::{BatchContributionJson, BatchTranscript, BatchTranscriptJson, Decode};
 
 pub struct Client {
     url: String,
@@ -141,15 +139,14 @@ impl Client {
     pub async fn post_contribute(
         &self,
         session_id: &str,
-        bc: &BatchContributionJson,
+        bc: &str,
     ) -> Result<MsgContributeReceipt, Box<dyn Error>> {
         let bearer = format!("Bearer {}", session_id);
-        let json_bc = serde_json::to_string(bc).unwrap();
         let resp = self
             .post_with_auth(
-                &format!("{}/contribute", self.url),
+                &format!("{}/contribute_with_halo2", self.url),
                 "application/json",
-                &json_bc,
+                &bc,
                 &bearer,
             )
             .await?;

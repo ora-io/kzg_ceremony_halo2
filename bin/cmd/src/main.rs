@@ -1,17 +1,14 @@
 #[macro_use]
 mod client;
 
-use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
-use kzg_ceremony_circuit::halo2_proofs::pairing::bn256::Fr;
+use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381;
 use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
-use kzg_ceremony_circuit::halo2_proofs::pairing::{bls12_381, bn256};
 
 use client::contribute::contribute_ceremony;
 use client::status::status;
 use client::verify_transcript::verify_transcript;
-use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
 use kzg_ceremony_prover::serialization;
 
 #[derive(StructOpt)]

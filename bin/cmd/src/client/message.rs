@@ -43,15 +43,6 @@ pub struct MsgContributeReceipt {
     pub signature: String,
 }
 
-impl MsgContributeReceipt {
-    fn to_string(&self) -> String {
-        format!(
-            "Contribute Receipt:\n  Receipt: {}\n  Signature: {}\n",
-            self.receipt, self.signature
-        )
-    }
-}
-
 impl Display for MsgContributeReceipt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
