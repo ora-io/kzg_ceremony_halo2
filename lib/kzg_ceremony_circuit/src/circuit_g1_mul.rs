@@ -24,9 +24,9 @@ use crate::circuit_utils::range_chip::{RangeChip, RangeChipConfig, RangeChipOps}
 use crate::context::{Context, GeneralScalarEccContext};
 use crate::utils::{bn_to_field, field_to_bn, split_g1_point, split_g2_point};
 
-pub const LENGTH: usize = 32;
+pub const LENGTH: usize = 128;
 #[allow(dead_code)]
-const K: u32 = 23;
+const K: u32 = 25;
 const INSTANCE_NUM: usize = 1 + 16 + 8 * 2 * LENGTH;
 
 #[derive(Clone, Debug)]
