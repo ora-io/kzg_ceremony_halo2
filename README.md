@@ -4,8 +4,8 @@ This client will generate proofs for contribution.
 
 Before you use this client, params for this Halo2 circuit should be generated. If not, you should generate params before you try it.
 ```
-cargo test -r circuit_g1_mul::test_write_params -- --nocapture
-cargo test -r circuit_g2_mul::test_write_params -- --nocapture
+cargo test -r --lib circuit_g1_mul::test_write_params -- --nocapture
+cargo test -r --lib circuit_g2_mul::test_write_params -- --nocapture
 ```
 This will generate two params for circuit, and **will be only in test**!
 
@@ -32,7 +32,7 @@ cargo build -r
 ```
 Optionally, you can first check the status of the lobby:
 ```bash
-$ ./target/release/kzg_ceremony_halo2 status
+$ ./target/release/cmd status
 Sequencer status:
   Lobby size: 0
   NumContributions: 108932
@@ -42,6 +42,6 @@ This can provide some context around how many people are waiting for their turn 
 
 Contribute to the ceremony by running. The random string should be more than 64-byte.
 ```
-$ ./target/release/kzg_ceremony_halo2 contribute --session-id <session-id> --rand <random string>
+$ ./target/release/cmd contribute --session-id <session-id> --rand <random string>
 ```
 This will take long time, because of generating many halo2 proofs.
