@@ -13,6 +13,7 @@ use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
 use kzg_ceremony_circuit::halo2_proofs::pairing::{bls12_381, bn256};
 use kzg_ceremony_circuit::halo2_proofs::poly::commitment::Params;
 use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
+use rayon::prelude::*;
 use std::fs;
 
 pub mod serialization;
@@ -25,15 +26,15 @@ pub fn prove(
     println!("Proving");
 
     println!("Reading G1 params...");
-    let g1_params = fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
-        .expect("Read G1 params file failed");
+    let g1_params =
+        fs::read("./lib/kzg_ceremony_circuit/g1_params.bin").expect("Read G1 params file failed");
     let g1_params = Params::<bn256::G1Affine>::read(&g1_params[..]).expect("Read G1 params failed");
     println!("Building G1 Proving Key..");
     let g1_pk = G1_PK::build(&g1_params);
 
     println!("Reading G2 params...");
-    let g2_params = fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
-        .expect("Read G2 params file failed");
+    let g2_params =
+        fs::read("./lib/kzg_ceremony_circuit/g2_params.bin").expect("Read G2 params file failed");
     let g2_params = Params::<bn256::G1Affine>::read(&g2_params[..]).expect("Read G2 params failed");
     println!("Building G2 Proving Key..");
     let g2_pk = G2_PK::build(&g2_params);
@@ -68,7 +69,7 @@ pub fn prove(
             .enumerate()
         {
             println!("Generating G1 proof {}.{}...", i, j);
-            let from_index = i * G1_LENGTH;
+            let from_index = j * G1_LENGTH;
 
             let g1_circuit = G1_Circuit::<Fr> {
                 from_index: Some(from_index),
@@ -102,7 +103,7 @@ pub fn prove(
             .enumerate()
         {
             println!("Generating G2 proof {},{}", i, j);
-            let from_index = i * G2_LENGTH + 1;
+            let from_index = j * G2_LENGTH + 1;
 
             let g2_circuit = G2_Circuit::<Fr> {
                 from_index: Some(from_index),
@@ -176,7 +177,7 @@ pub fn verify_proofs(
         assert_eq!(proof.0.len(), num_chunks);
         assert_eq!(new_contribution.num_g1_powers as usize % G1_LENGTH, 0);
 
-        for (i, (proof_g1, (old_points, new_points))) in proof
+        let data = proof
             .0
             .iter()
             .zip(
@@ -184,19 +185,22 @@ pub fn verify_proofs(
                     .powers_of_tau
                     .g1_powers
                     .chunks(G1_LENGTH)
-                    .zip(old_contribution.powers_of_tau.g1_powers.chunks(G1_LENGTH)),
+                    .zip(new_contribution.powers_of_tau.g1_powers.chunks(G1_LENGTH)),
             )
-            .enumerate()
-        {
-            let instances = circuit_g1_mul::generate_instance(&G1_Instance {
-                from_index: i * G1_LENGTH,
-                pubkey,
-                old_points: old_points.to_vec(),
-                new_points: new_points.to_vec(),
-            });
+            .collect::<Vec<_>>();
 
-            g1_verify_proof(&g1_params, &g1_vk, &proof_g1, &instances).unwrap();
-        }
+        data.par_iter()
+            .enumerate()
+            .for_each(|(i, &(proof_g1, (old_points, new_points)))| {
+                let instances = circuit_g1_mul::generate_instance(&G1_Instance {
+                    from_index: i * G1_LENGTH,
+                    pubkey,
+                    old_points: old_points.to_vec(),
+                    new_points: new_points.to_vec(),
+                });
+
+                g1_verify_proof(&g1_params, &g1_vk, &proof_g1, &instances).unwrap();
+            });
 
         let num_chunks = new_contribution.num_g2_powers as usize / G2_LENGTH;
         assert_eq!(proof.1.len(), num_chunks);
@@ -206,7 +210,7 @@ pub fn verify_proofs(
             old_contribution.powers_of_tau.g2_powers[0],
             new_contribution.powers_of_tau.g2_powers[0]
         );
-        for (i, (proof_g2, (old_points, new_points))) in proof
+        let data = proof
             .1
             .iter()
             .zip(
@@ -214,16 +218,19 @@ pub fn verify_proofs(
                     .chunks(G2_LENGTH)
                     .zip(new_contribution.powers_of_tau.g2_powers[1..].chunks(G2_LENGTH)),
             )
-            .enumerate()
-        {
-            let instances = circuit_g2_mul::generate_instance(&G2_Instance {
-                from_index: i * G2_LENGTH + 1,
-                pubkey,
-                old_points: old_points.to_vec(),
-                new_points: new_points.to_vec(),
-            });
+            .collect::<Vec<_>>();
 
-            g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).unwrap();
-        }
+        data.par_iter()
+            .enumerate()
+            .for_each(|(i, &(proof_g2, (old_points, new_points)))| {
+                let instances = circuit_g2_mul::generate_instance(&G2_Instance {
+                    from_index: i * G2_LENGTH + 1,
+                    pubkey,
+                    old_points: old_points.to_vec(),
+                    new_points: new_points.to_vec(),
+                });
+
+                g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).unwrap();
+            });
     }
 }

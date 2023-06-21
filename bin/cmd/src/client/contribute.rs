@@ -114,9 +114,9 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
         .expect("Write proof failed");
 
     //verify
-    let g1_params = std::fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
-        .expect("Read G2 params file failed");
-    let g2_params = std::fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
+    let g1_params = std::fs::read("./lib/kzg_ceremony_circuit/g1_params.bin")
+        .expect("Read G1 params file failed");
+    let g2_params = std::fs::read("./lib/kzg_ceremony_circuit/g2_params.bin")
         .expect("Read G2 params file failed");
     kzg_ceremony_prover::verify_proofs(
         &prev_batch_contribution,
@@ -210,6 +210,7 @@ fn tau(randomness: String, num: usize) -> Vec<Fr> {
         let random_fr = Fr::random(OsRng);
         taus.push(fr * random_fr);
     }
+    println!("Taus {:?}", taus);
 
     taus
 }
