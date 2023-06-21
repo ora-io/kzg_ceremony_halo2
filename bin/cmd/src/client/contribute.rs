@@ -121,7 +121,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     kzg_ceremony_prover::verify_proofs(
         &prev_batch_contribution,
         &new_batch_contribution,
-        serialized_proof,
+        serialized_proof.clone(),
         g1_params,
         g2_params,
     );
@@ -129,7 +129,7 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     println!("Sending contribution.");
     let bc_with_proofs = BatchContributionWithProof {
         contributions: new_batch_contribution_json,
-        proofs: "Proof bytes".to_string(),
+        proofs: serialized_proof,
     };
     let bc_with_proofs = serde_json::to_string(&bc_with_proofs).expect("Serialize failed");
     let receipt = client.post_contribute(&session_id, &bc_with_proofs).await;
