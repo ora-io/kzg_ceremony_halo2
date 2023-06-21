@@ -423,5 +423,5 @@ fn test_write_params() {
 
     let mut params_buffer = vec![];
     params.write(&mut params_buffer).unwrap();
-    std::fs::write("../g2_params.bin", &params_buffer).expect("Write params failed");
+    std::fs::write("g2_params.bin", &params_buffer).expect("Write params failed");
 }
