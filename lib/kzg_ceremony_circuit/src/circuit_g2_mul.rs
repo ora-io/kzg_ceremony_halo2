@@ -10,8 +10,7 @@ use rand::rngs::OsRng;
 use halo2_proofs::arithmetic::{Field, FieldExt};
 use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
 use halo2_proofs::pairing::bls12_381;
-use halo2_proofs::pairing::bn256::{self, Bn256, Fr, G1Affine};
-use halo2_proofs::pairing::group::Curve;
+use halo2_proofs::pairing::bn256::{Bn256, Fr, G1Affine};
 use halo2_proofs::plonk::{self, ConstraintSystem, Error, SingleVerifier};
 use halo2_proofs::poly::commitment::{Params, ParamsVerifier};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
@@ -24,9 +23,7 @@ use crate::circuit_utils::range_chip::{RangeChip, RangeChipConfig, RangeChipOps}
 use crate::context::{Context, GeneralScalarEccContext};
 use crate::utils::{bn_to_field, field_to_bn, split_g2_point};
 
-pub const LENGTH: usize = 16;
-#[allow(dead_code)]
-const K: u32 = 24;
+pub const LENGTH: usize = 8;
 const INSTANCE_NUM: usize = 1 + 16 + 8 * 2 * 2 * LENGTH;
 
 #[derive(Clone, Debug)]
@@ -343,7 +340,6 @@ pub fn verify_proof(
     let strategy = SingleVerifier::new(&params_verifier);
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
-    let timer = start_timer!(|| "verify proof");
     let result = plonk::verify_proof(
         &params_verifier,
         &vk.vk,
@@ -351,77 +347,101 @@ pub fn verify_proof(
         &[&[&instance]],
         &mut transcript,
     );
-    end_timer!(timer);
 
     result
 }
 
-#[test]
-fn test_circuit() {
-    // use halo2_proofs::pairing::group::ff::PrimeField;
+mod tests {
+    use crate::circuit_g2_mul::{
+        create_proofs, generate_instance, verify_proof, Circuit, Instance, ProvingKey,
+        VerifyingKey, LENGTH,
+    };
+    use crate::K;
+    use halo2_proofs::arithmetic::Field;
+    use halo2_proofs::dev::MockProver;
+    use halo2_proofs::pairing::bn256::{Bn256, Fr};
+    use halo2_proofs::pairing::group::ff::PrimeField;
+    use halo2_proofs::pairing::group::Curve;
+    use halo2_proofs::pairing::{bls12_381, bn256};
+    use halo2_proofs::poly::commitment::Params;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
-    let tau = bls12_381::Fr::random(&mut rng);
-    let from_index = 1;
-    let old_points = (0..LENGTH)
-        .map(|_| {
-            let s = bls12_381::Fr::random(&mut rng);
-            let p = bls12_381::G2Affine::generator() * s;
+    fn random_circuit() -> (Circuit<Fr>, Vec<Fr>) {
+        let mut rng = XorShiftRng::seed_from_u64(0x0102030405060708);
+        let tau = bls12_381::Fr::random(&mut rng);
+        let from_index = 1;
+        let old_points = (0..LENGTH)
+            .map(|_| {
+                let s = bls12_381::Fr::random(&mut rng);
+                let p = bls12_381::G2Affine::generator() * s;
 
-            p.to_affine()
-        })
-        .collect::<Vec<_>>();
-    let mut scalar = tau.pow_vartime(&[from_index as u64, 0, 0, 0]);
-    let mut new_points = vec![];
-    for p in old_points.iter() {
-        let new_p = p * scalar;
-        new_points.push(new_p.to_affine());
-        scalar = scalar * tau;
+                p.to_affine()
+            })
+            .collect::<Vec<_>>();
+        let mut scalar = tau.pow_vartime(&[from_index as u64, 0, 0, 0]);
+        let mut new_points = vec![];
+        for p in old_points.iter() {
+            let new_p = p * scalar;
+            new_points.push(new_p.to_affine());
+            scalar = scalar * tau;
+        }
+
+        let circuit = Circuit::<Fr> {
+            from_index: Some(from_index),
+            tau: Some(tau),
+            pubkey: Some((bls12_381::G2Affine::generator() * tau).to_affine()),
+            points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
+            new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
+            _mark: Default::default(),
+        };
+
+        let instance = generate_instance(&Instance {
+            from_index,
+            pubkey: (bls12_381::G2Affine::generator() * tau).to_affine(),
+            old_points,
+            new_points,
+        });
+
+        (circuit, instance)
     }
 
-    let circuit = Circuit::<Fr> {
-        from_index: Some(from_index),
-        tau: Some(tau),
-        pubkey: Some((bls12_381::G2Affine::generator() * tau).to_affine()),
-        points: old_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
-        new_points: new_points.iter().map(|p| Some(*p)).collect::<Vec<_>>(),
-        _mark: Default::default(),
-    };
+    #[test]
+    fn mock_prover() {
+        let (circuit, instance) = random_circuit();
+        let prover = match MockProver::run(K, &circuit, vec![instance]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
 
-    let instance = generate_instance(&Instance {
-        from_index,
-        pubkey: (bls12_381::G2Affine::generator() * tau).to_affine(),
-        old_points,
-        new_points,
-    });
+    #[test]
+    fn prover() {
+        let (circuit, instance) = random_circuit();
 
-    use halo2_proofs::dev::MockProver;
-    let prover = match MockProver::run(K, &circuit, vec![instance]) {
-        Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
-    };
-    assert_eq!(prover.verify(), Ok(()));
+        let params = match std::fs::read(format!("params_{}.bin", K)) {
+            Ok(params) => Params::<bn256::G1Affine>::read(&params[..]).expect("Read params failed"),
+            Err(_) => {
+                println!("Setup");
+                let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
+                let mut params_buffer = vec![];
+                params.write(&mut params_buffer).unwrap();
+                std::fs::write(format!("params_{}.bin", K), &params_buffer)
+                    .expect("Write params failed");
 
-    // println!("Test creating proof...");
-    // let params = Params::<G1Affine>::unsafe_setup::<Bn256>(K);
-    // let pk = ProvingKey::build(&params);
-    // let proof = create_proofs(&params, circuit, &pk, &instance);
-    //
-    // let vk = VerifyingKey::build(&params);
-    // verify_proof(&params, &vk, &proof, &instance).unwrap();
-    //
-    // let mut instance = instance;
-    // instance[0] = Fr::from_str_vartime("2").unwrap();
-    // verify_proof(&params, &vk, &proof, &instance).unwrap_err();
-}
+                params
+            }
+        };
 
-#[test]
-fn test_write_params() {
-    let params = Params::<bn256::G1Affine>::unsafe_setup::<Bn256>(K);
+        let pk = ProvingKey::build(&params);
+        let proof = create_proofs(&params, circuit, &pk, &instance);
 
-    let mut params_buffer = vec![];
-    params.write(&mut params_buffer).unwrap();
-    std::fs::write("g2_params.bin", &params_buffer).expect("Write params failed");
+        let vk = VerifyingKey::build(&params);
+        verify_proof(&params, &vk, &proof, &instance).unwrap();
+
+        let mut instance = instance;
+        instance[0] = Fr::from_str_vartime("2").unwrap();
+        verify_proof(&params, &vk, &proof, &instance).unwrap_err();
+    }
 }

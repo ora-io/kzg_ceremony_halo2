@@ -1,14 +1,13 @@
+use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::{Fr, G1Affine, G2Affine};
 use kzg_ceremony_circuit::halo2_proofs::pairing::group::prime::PrimeCurveAffine;
 use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::{Fr, G1Affine, G2Affine};
-
-// TODO: multi-threads
 macro_rules! encode_points {
     ($t:ty, $points:expr) => {
         $points
-            .iter()
+            .par_iter()
             .map(|p: &$t| format!("0x{}", hex::encode(p.to_compressed())))
             .collect::<Vec<String>>()
     };
@@ -17,7 +16,7 @@ macro_rules! encode_points {
 macro_rules! decode_points {
     ($t:ty, $points:expr) => {
         $points
-            .iter()
+            .par_iter()
             .map(|p: &String| {
                 let bytes = hex::decode(&p[2..]).expect("Failed to decode point in hex string");
                 <$t>::from_compressed(&bytes.try_into().expect("Error length")).unwrap()
@@ -85,7 +84,7 @@ impl Encode for Witness {
     fn encode(&self) -> Self::Output {
         let bls_signatures = self
             .bls_signatures
-            .iter()
+            .par_iter()
             .map(|s| match s {
                 None => "".to_string(),
                 Some(p) => {
@@ -118,7 +117,7 @@ impl Decode for WitnessJson {
     fn decode(&self) -> Self::Output {
         let bls_signatures = self
             .bls_signatures
-            .iter()
+            .par_iter()
             .map(|s| {
                 if s.is_empty() {
                     None

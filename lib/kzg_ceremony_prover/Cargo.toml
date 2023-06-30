@@ -11,3 +11,4 @@ serde_json = "1.0.0"
 hex = "0.4.3"
 kzg_ceremony_circuit = {path = "../kzg_ceremony_circuit"}
 rayon = "1.5.2"
+ark-std = { version = "0.3", features = ["print-trace"] }

@@ -1,4 +1,5 @@
 use crate::serialization::{BatchContribution, Proof};
+use ark_std::{end_timer, start_timer};
 use kzg_ceremony_circuit::circuit_g1_mul::{
     verify_proof as g1_verify_proof, Circuit as G1_Circuit, Instance as G1_Instance,
     ProvingKey as G1_PK, VerifyingKey as G1_VK, LENGTH as G1_LENGTH,
@@ -14,7 +15,6 @@ use kzg_ceremony_circuit::halo2_proofs::pairing::{bls12_381, bn256};
 use kzg_ceremony_circuit::halo2_proofs::poly::commitment::Params;
 use kzg_ceremony_circuit::{circuit_g1_mul, circuit_g2_mul};
 use rayon::prelude::*;
-use std::fs;
 
 pub mod serialization;
 
@@ -22,22 +22,17 @@ pub fn prove(
     old_contributions: &BatchContribution,
     new_contributions: &BatchContribution,
     taus: &Vec<Scalar>,
+    params: &Vec<u8>,
 ) -> Proof {
     println!("Proving");
 
-    println!("Reading G1 params...");
-    let g1_params =
-        fs::read("./lib/kzg_ceremony_circuit/g1_params.bin").expect("Read G1 params file failed");
-    let g1_params = Params::<bn256::G1Affine>::read(&g1_params[..]).expect("Read G1 params failed");
-    println!("Building G1 Proving Key..");
-    let g1_pk = G1_PK::build(&g1_params);
+    let params = Params::<bn256::G1Affine>::read(&params[..]).expect("Read params failed");
 
-    println!("Reading G2 params...");
-    let g2_params =
-        fs::read("./lib/kzg_ceremony_circuit/g2_params.bin").expect("Read G2 params file failed");
-    let g2_params = Params::<bn256::G1Affine>::read(&g2_params[..]).expect("Read G2 params failed");
+    println!("Building G1 Proving Key..");
+    let g1_pk = G1_PK::build(&params);
+
     println!("Building G2 Proving Key..");
-    let g2_pk = G2_PK::build(&g2_params);
+    let g2_pk = G2_PK::build(&params);
 
     println!("Generating proofs...");
     let mut proofs = vec![];
@@ -86,8 +81,7 @@ pub fn prove(
                 old_points: old_points.to_vec(),
                 new_points: new_points.to_vec(),
             });
-            let proof_g1 =
-                circuit_g1_mul::create_proofs(&g1_params, g1_circuit, &g1_pk, &instances);
+            let proof_g1 = circuit_g1_mul::create_proofs(&params, g1_circuit, &g1_pk, &instances);
             proofs_g1.push(proof_g1);
         }
 
@@ -120,8 +114,7 @@ pub fn prove(
                 old_points: old_points.to_vec(),
                 new_points: new_points.to_vec(),
             });
-            let proof_g2 =
-                circuit_g2_mul::create_proofs(&g2_params, g2_circuit, &g2_pk, &instances);
+            let proof_g2 = circuit_g2_mul::create_proofs(&params, g2_circuit, &g2_pk, &instances);
             proofs_g2.push(proof_g2);
         }
 
@@ -135,34 +128,20 @@ pub fn verify_proofs(
     old_contributions: &BatchContribution,
     new_contributions: &BatchContribution,
     proofs: String,
-    g1_params: Vec<u8>,
-    g2_params: Vec<u8>,
+    params: Vec<u8>,
 ) {
     println!("Verifying");
 
-    // let old_contributions_json: BatchContributionJson =
-    //     serde_json::from_str(&old_contributions_json).expect("Deserialize failed");
-    // let old_contributions = old_contributions_json.decode();
-
-    // let new_contributions_json: BatchContributionJson =
-    //     serde_json::from_str(&new_contributions_json).expect("Deserialize failed");
-    // let new_contributions = new_contributions_json.decode();
-
     let proofs: Proof = serde_json::from_str(&proofs).expect("Deserialize proof failed");
 
-    println!("Reading G1 params...");
-    // let g1_params = fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
-    //     .expect("Read G1 params file failed");
-    let g1_params = Params::<bn256::G1Affine>::read(&g1_params[..]).expect("Read G1 params failed");
-    println!("Building G1 Verification Key..");
-    let g1_vk = G1_VK::build(&g1_params);
+    println!("Reading params...");
+    let params = Params::<bn256::G1Affine>::read(&params[..]).expect("Read params failed");
 
-    println!("Reading G2 params...");
-    // let g2_params = fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
-    //     .expect("Read G2 params file failed");
-    let g2_params = Params::<bn256::G1Affine>::read(&g2_params[..]).expect("Read G2 params failed");
+    println!("Building G1 Verification Key..");
+    let g1_vk = G1_VK::build(&params);
+
     println!("Building G2 Verification Key..");
-    let g2_vk = G2_VK::build(&g2_params);
+    let g2_vk = G2_VK::build(&params);
 
     assert_eq!(proofs.0.len(), new_contributions.contributions.len());
     for (proof, (old_contribution, new_contribution)) in proofs.0.iter().zip(
@@ -177,6 +156,7 @@ pub fn verify_proofs(
         assert_eq!(proof.0.len(), num_chunks);
         assert_eq!(new_contribution.num_g1_powers as usize % G1_LENGTH, 0);
 
+        let timer = start_timer!(|| "Verify g1 proofs");
         let data = proof
             .0
             .iter()
@@ -199,8 +179,9 @@ pub fn verify_proofs(
                     new_points: new_points.to_vec(),
                 });
 
-                g1_verify_proof(&g1_params, &g1_vk, &proof_g1, &instances).unwrap();
+                g1_verify_proof(&params, &g1_vk, &proof_g1, &instances).unwrap();
             });
+        end_timer!(timer);
 
         let num_chunks = new_contribution.num_g2_powers as usize / G2_LENGTH;
         assert_eq!(proof.1.len(), num_chunks);
@@ -210,6 +191,8 @@ pub fn verify_proofs(
             old_contribution.powers_of_tau.g2_powers[0],
             new_contribution.powers_of_tau.g2_powers[0]
         );
+
+        let timer = start_timer!(|| "Verify g2 proofs");
         let data = proof
             .1
             .iter()
@@ -230,7 +213,8 @@ pub fn verify_proofs(
                     new_points: new_points.to_vec(),
                 });
 
-                g2_verify_proof(&g2_params, &g2_vk, &proof_g2, &instances).unwrap();
+                g2_verify_proof(&params, &g2_vk, &proof_g2, &instances).unwrap();
             });
+        end_timer!(timer);
     }
 }

@@ -1,10 +1,13 @@
-use blake2::Digest;
-use rand::rngs::OsRng;
 use std::fs;
 use std::io::Write;
 use std::ops::{Mul, MulAssign};
 
+use blake2::Digest;
+use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
+
 use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
+use kzg_ceremony_circuit::K;
 use kzg_ceremony_prover::prove;
 use kzg_ceremony_prover::serialization::BatchContributionJson;
 
@@ -13,7 +16,6 @@ use crate::client::request::{Client, Status};
 use crate::client::{MIN_RANDOMNESS_LEN, SEQUENCER};
 use crate::serialization::{BatchContribution, Contribution, Decode, Encode, PowersOfTau};
 use crate::Curve;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct BatchContributionWithProof {
@@ -107,23 +109,25 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     println!("Serialization and storing took {}s", duration.as_secs());
 
     // Prove
-    let proofs = prove(&prev_batch_contribution, &new_batch_contribution, &taus);
+    let params = std::fs::read(format!("./lib/kzg_ceremony_circuit/params_{}.bin", K))
+        .expect("Read params file failed");
+    let proofs = prove(
+        &prev_batch_contribution,
+        &new_batch_contribution,
+        &taus,
+        &params,
+    );
     let serialized_proof = serde_json::to_string(&proofs).expect("Serialize proof failed");
     let mut file = fs::File::create("Proof.json").expect("Create file failed");
     file.write_all(serialized_proof.as_bytes())
         .expect("Write proof failed");
 
     //verify
-    let g1_params = std::fs::read("./lib/kzg_ceremony_circuit/g1_params.bin")
-        .expect("Read G1 params file failed");
-    let g2_params = std::fs::read("./lib/kzg_ceremony_circuit/g2_params.bin")
-        .expect("Read G2 params file failed");
     kzg_ceremony_prover::verify_proofs(
         &prev_batch_contribution,
         &new_batch_contribution,
         serialized_proof.clone(),
-        g1_params,
-        g2_params,
+        params,
     );
 
     println!("Sending contribution.");
@@ -223,6 +227,7 @@ mod tests {
     use crate::serialization::{BatchContribution, Contribution, Encode, PowersOfTau};
     use kzg_ceremony_circuit::halo2_proofs::arithmetic::Field;
     use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381::Fr;
+    use kzg_ceremony_circuit::K;
     use kzg_ceremony_prover::{prove, verify_proofs};
     use rand::rngs::OsRng;
     use std::io::Write;
@@ -254,7 +259,8 @@ mod tests {
         println!("Storing old contribution.");
         let serialized_old = serde_json::to_string(&old_contributions.encode())
             .expect("Serialize prev_batch_contribution failed");
-        let mut file = std::fs::File::create("old_contributions.json").expect("Create file failed");
+        let mut file =
+            std::fs::File::create("test_old_contributions.json").expect("Create file failed");
         file.write_all(serialized_old.as_bytes())
             .expect("Write prev_batch_contribution failed");
 
@@ -267,28 +273,30 @@ mod tests {
         println!("Storing new contribution.");
         let serialized_new = serde_json::to_string(&new_contributions.encode())
             .expect("Serialize new_contributions failed");
-        let mut file = std::fs::File::create("new_contributions.json").expect("Create file failed");
+        let mut file =
+            std::fs::File::create("test_new_contributions.json").expect("Create file failed");
         file.write_all(serialized_new.as_bytes())
             .expect("Write new_contributions failed");
 
+        let params = std::fs::read(format!("../../lib/kzg_ceremony_circuit/params_{}.bin", K))
+            .expect("Read params file failed");
         let now = Instant::now();
-        let proofs = prove(&old_contributions, &new_contributions, &taus);
+        let proofs = prove(&old_contributions, &new_contributions, &taus, &params);
         let duration = now.elapsed();
-        let serialized_proof = serde_json::to_string(&proofs).expect("Serialize proof failed");
         println!("Prover took {}s", duration.as_secs());
 
+        let serialized_proof = serde_json::to_string(&proofs).expect("Serialize proof failed");
+        let mut file = std::fs::File::create("test_proof.json").expect("Create file failed");
+        file.write_all(serialized_proof.as_bytes())
+            .expect("Write proof failed");
+
         println!("Verifying");
-        let g1_params = std::fs::read("../../lib/kzg_ceremony_circuit/g1_params.bin")
-            .expect("Read G2 params file failed");
-        let g2_params = std::fs::read("../../lib/kzg_ceremony_circuit/g2_params.bin")
-            .expect("Read G2 params file failed");
         let now = Instant::now();
         verify_proofs(
             &old_contributions,
             &new_contributions,
             serialized_proof,
-            g1_params,
-            g2_params,
+            params,
         );
         let duration = now.elapsed();
         println!("Verifier took {}s", duration.as_secs());
