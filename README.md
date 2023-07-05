@@ -4,8 +4,7 @@ This client will generate proofs for contribution.
 
 Before you use this client, params for this Halo2 circuit should be generated. If not, you should generate params before you try it.
 ```
-cargo test -r --lib circuit_g1_mul::test_write_params -- --nocapture
-cargo test -r --lib circuit_g2_mul::test_write_params -- --nocapture
+cargo test -r  --lib test_untrusted_setup
 ```
 This will generate two params for circuit, and **will be only in test**!
 
