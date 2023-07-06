@@ -11,7 +11,7 @@ use halo2_proofs::pairing::bn256;
 use halo2_proofs::pairing::bn256::Bn256;
 use halo2_proofs::poly::commitment::Params;
 
-pub const K: u32 = 23;
+pub const K: u32 = 24;
 
 // This is just for test.
 #[test]
