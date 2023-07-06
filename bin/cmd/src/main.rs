@@ -8,6 +8,7 @@ use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
 
 use client::contribute::contribute_ceremony;
 use client::status::status;
+use client::verify_proofs::verify_halo2_proofs;
 use client::verify_transcript::verify_transcript;
 use kzg_ceremony_prover::serialization;
 
@@ -33,6 +34,10 @@ enum Command {
     /// Pulls and verifies the current sequencer transcript
     #[structopt(name = "verify_transcript")]
     VerifyTranscript,
+
+    /// Verify proofs of contribution.
+    #[structopt(name = "verify_proofs")]
+    VerifyProofs,
 }
 
 fn main() {
@@ -50,6 +55,9 @@ fn main() {
         }
         Command::VerifyTranscript => {
             verify_transcript();
+        }
+        Command::VerifyProofs => {
+            verify_halo2_proofs();
         }
     }
 }

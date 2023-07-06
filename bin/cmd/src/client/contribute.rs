@@ -108,35 +108,10 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
     let duration = now.elapsed();
     println!("Serialization and storing took {}s", duration.as_secs());
 
-    // Prove
-    let params = std::fs::read(format!("./lib/kzg_ceremony_circuit/params_{}.bin", K))
-        .expect("Read params file failed");
-    let proofs = prove(
-        &prev_batch_contribution,
-        &new_batch_contribution,
-        &taus,
-        &params,
-    );
-    let serialized_proof = serde_json::to_string(&proofs).expect("Serialize proof failed");
-    let mut file = fs::File::create("Proof.json").expect("Create file failed");
-    file.write_all(serialized_proof.as_bytes())
-        .expect("Write proof failed");
-
-    //verify
-    kzg_ceremony_prover::verify_proofs(
-        &prev_batch_contribution,
-        &new_batch_contribution,
-        serialized_proof.clone(),
-        params,
-    );
-
     println!("Sending contribution.");
-    let bc_with_proofs = BatchContributionWithProof {
-        contributions: new_batch_contribution_json,
-        proofs: serialized_proof,
-    };
-    let bc_with_proofs = serde_json::to_string(&bc_with_proofs).expect("Serialize failed");
-    let receipt = client.post_contribute(&session_id, &bc_with_proofs).await;
+    let receipt = client
+        .post_contribute(&session_id, &new_contributions_json)
+        .await;
     match receipt {
         Ok(r) => {
             println!("Contribute OK.");
@@ -150,6 +125,29 @@ pub async fn contribute_ceremony(session_id: String, randomness: String) {
             println!("Send contribution failed.");
         }
     }
+
+    // Prove
+    let params = fs::read(format!("./lib/kzg_ceremony_circuit/params_{}.bin", K))
+        .expect("Read params file failed");
+    let proofs = prove(
+        &prev_batch_contribution,
+        &new_batch_contribution,
+        &taus,
+        &params,
+    );
+    let serialized_proof = serde_json::to_string(&proofs).expect("Serialize proof failed");
+    let mut file = fs::File::create("Proof.json").expect("Create file failed");
+    file.write_all(serialized_proof.as_bytes())
+        .expect("Write proof failed");
+    println!("Done.");
+
+    // //verify
+    // kzg_ceremony_prover::verify_proofs(
+    //     &prev_batch_contribution,
+    //     &new_batch_contribution,
+    //     serialized_proof.clone(),
+    //     params,
+    // );
 }
 
 pub(crate) fn contribute(pre_bc: &BatchContribution, taus: &Vec<Fr>) -> BatchContribution {
@@ -214,7 +212,6 @@ fn tau(randomness: String, num: usize) -> Vec<Fr> {
         let random_fr = Fr::random(OsRng);
         taus.push(fr * random_fr);
     }
-    println!("Taus {:?}", taus);
 
     taus
 }

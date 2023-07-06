@@ -44,3 +44,8 @@ Contribute to the ceremony by running. The random string should be more than 64-
 $ ./target/release/cmd contribute --session-id <session-id> --rand <random string>
 ```
 This will take long time, because of generating many halo2 proofs.
+
+After the contribution, the following command could be used to verify proofs.
+```
+./target/release/cmd verify_proofs
+```

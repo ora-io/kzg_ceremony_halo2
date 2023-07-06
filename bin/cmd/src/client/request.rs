@@ -144,7 +144,7 @@ impl Client {
         let bearer = format!("Bearer {}", session_id);
         let resp = self
             .post_with_auth(
-                &format!("{}/contribute_with_halo2", self.url),
+                &format!("{}/contribute", self.url),
                 "application/json",
                 &bc,
                 &bearer,

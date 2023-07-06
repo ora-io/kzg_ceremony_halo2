@@ -2,6 +2,7 @@ pub mod contribute;
 pub mod message;
 pub mod request;
 pub mod status;
+pub mod verify_proofs;
 pub mod verify_transcript;
 
 const SEQUENCER: &str = "https://seq.ceremony.ethereum.org";
