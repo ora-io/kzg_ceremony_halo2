@@ -1,5 +1,6 @@
 pub mod contribute;
 pub mod message;
+pub mod offline_prove;
 pub mod request;
 pub mod status;
 pub mod verify_proofs;

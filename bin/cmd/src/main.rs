@@ -7,6 +7,7 @@ use kzg_ceremony_circuit::halo2_proofs::pairing::bls12_381;
 use kzg_ceremony_circuit::halo2_proofs::pairing::group::Curve;
 
 use client::contribute::contribute_ceremony;
+use client::offline_prove::offline_prove;
 use client::status::status;
 use client::verify_proofs::verify_halo2_proofs;
 use client::verify_transcript::verify_transcript;
@@ -38,6 +39,10 @@ enum Command {
     /// Verify proofs of contribution.
     #[structopt(name = "verify_proofs")]
     VerifyProofs,
+
+    /// offline prove.
+    #[structopt(name = "offline_prove")]
+    OfflineProve,
 }
 
 fn main() {
@@ -58,6 +63,9 @@ fn main() {
         }
         Command::VerifyProofs => {
             verify_halo2_proofs();
+        }
+        Command::OfflineProve => {
+            offline_prove();
         }
     }
 }
