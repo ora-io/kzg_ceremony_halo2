@@ -2,11 +2,7 @@
 
 This client will generate proofs for contribution.
 
-Before you use this client, params for this Halo2 circuit should be generated. If not, you should generate params before you try it.
-```
-cargo test -r  --lib test_untrusted_setup
-```
-This will generate two params for circuit, and **will be only in test**!
+Before use this client, you should download Halo2 params from this [link](https://drive.google.com/file/d/1lcNlhNp2jYVxOKJhOD7p6tl0R_SOF05g/view?usp=drive_link)(sha1 `1d51c8f420a613fa382d0852952a84cab9d1907e`), and put it in the directory of `lib/kzg_ceremony_circuit`. 
 
 ## How to contribute
 

@@ -144,6 +144,7 @@ pub fn verify_proofs(
     let g2_vk = G2_VK::build(&params);
 
     assert_eq!(proofs.0.len(), new_contributions.contributions.len());
+    let timer = start_timer!(|| "Verify proofs");
     for (proof, (old_contribution, new_contribution)) in proofs.0.iter().zip(
         old_contributions
             .contributions
@@ -156,7 +157,6 @@ pub fn verify_proofs(
         assert_eq!(proof.0.len(), num_chunks);
         assert_eq!(new_contribution.num_g1_powers as usize % G1_LENGTH, 0);
 
-        let timer = start_timer!(|| "Verify g1 proofs");
         let data = proof
             .0
             .iter()
@@ -181,7 +181,6 @@ pub fn verify_proofs(
 
                 g1_verify_proof(&params, &g1_vk, &proof_g1, &instances).unwrap();
             });
-        end_timer!(timer);
 
         let num_chunks = new_contribution.num_g2_powers as usize / G2_LENGTH;
         assert_eq!(proof.1.len(), num_chunks);
@@ -192,7 +191,6 @@ pub fn verify_proofs(
             new_contribution.powers_of_tau.g2_powers[0]
         );
 
-        let timer = start_timer!(|| "Verify g2 proofs");
         let data = proof
             .1
             .iter()
@@ -215,6 +213,6 @@ pub fn verify_proofs(
 
                 g2_verify_proof(&params, &g2_vk, &proof_g2, &instances).unwrap();
             });
-        end_timer!(timer);
     }
+    end_timer!(timer);
 }
